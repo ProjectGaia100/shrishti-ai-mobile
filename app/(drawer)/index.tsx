@@ -219,9 +219,9 @@ export default function HomeScreen() {
 
                 {manualResults.length > 0 && (
                   <View style={styles.manualResults}>
-                    {manualResults.map((item) => (
+                    {manualResults.map((item, index) => (
                       <TouchableOpacity
-                        key={`${item.lat}-${item.lon}`}
+                        key={`${item.name}-${item.country}-${item.state || ''}-${item.lat}-${item.lon}-${index}`}
                         style={styles.manualResultItem}
                         onPress={() => handleManualSelect(item)}
                         activeOpacity={0.7}

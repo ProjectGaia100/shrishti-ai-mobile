@@ -4,6 +4,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
+import { useTheme } from '../context/ThemeContext';
 import { spacing, fontSize, fontWeight, iconSize, radius, shadows } from '../constants/DesignTokens';
 
 interface EmptyStateProps {
@@ -24,6 +25,8 @@ export default function EmptyState({
   iconColor = Colors.accentBlue,
   action,
 }: EmptyStateProps) {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.container}>
       {/* Icon */}
@@ -32,10 +35,10 @@ export default function EmptyState({
       </View>
 
       {/* Title */}
-      <Text style={styles.title}>{title}</Text>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
 
       {/* Message */}
-      {message && <Text style={styles.message}>{message}</Text>}
+      {message && <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>}
 
       {/* Action Button */}
       {action && (
@@ -71,13 +74,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: fontSize.xl,
     fontWeight: fontWeight.bold,
-    color: Colors.textPrimary,
     textAlign: 'center',
     marginBottom: spacing.md,
   },
   message: {
     fontSize: fontSize.base,
-    color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: fontSize.base * 1.5,
     marginBottom: spacing.xl,

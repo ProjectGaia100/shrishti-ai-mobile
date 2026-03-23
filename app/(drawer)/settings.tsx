@@ -304,13 +304,15 @@ export default function SettingsScreen() {
               style={styles.logoutBtn}
               activeOpacity={0.8}
             >
-              <LinearGradient
-                colors={['rgba(239, 68, 68, 0.15)', 'rgba(239, 68, 68, 0.05)']}
-                style={styles.logoutBtnInner}
+              <View
+                style={[
+                  styles.logoutBtnInner,
+                  { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)' },
+                ]}
               >
                 <Ionicons name="log-out-outline" size={20} color={Colors.accentRed} />
                 <Text style={styles.logoutBtnText}>Log Out</Text>
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </ScrollView>
         </Animated.View>

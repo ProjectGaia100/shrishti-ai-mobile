@@ -151,30 +151,54 @@ export default function LocationsScreen() {
     [defaultLocation, setDefaultLocation],
   );
 
-  const renderSearchResult = ({ item }: { item: GeocodingResult }) => (
+  // Check if a location is already saved by comparing coordinates
+  const isLocationSaved = (result: GeocodingResult) => {
+    const PRECISION = 5; // Match LOCATION_PRECISION_DECIMALS
+    return savedLocations.some(
+      (loc) =>
+        loc.lat.toFixed(PRECISION) === result.lat.toFixed(PRECISION) &&
+        loc.lon.toFixed(PRECISION) === result.lon.toFixed(PRECISION),
+    );
+  };
+
+  const renderSearchResult = ({ item }: { item: GeocodingResult }) => {
+    const alreadySaved = isLocationSaved(item);
+
+    return (
     <TouchableOpacity
-      style={styles.resultCard}
-      onPress={() => handleAdd(item)}
-      activeOpacity={0.7}
-      disabled={adding !== null}
+      style={[styles.resultCard, alreadySaved && styles.resultCardDisabled]}
+      onPress={() => !alreadySaved && handleAdd(item)}
+      activeOpacity={alreadySaved ? 1 : 0.7}
+      disabled={adding !== null || alreadySaved}
     >
       <View style={styles.resultInfo}>
-        <Ionicons name="location-outline" size={18} color={Colors.accentBlue} />
+        <Ionicons 
+          name="location-outline" 
+          size={18} 
+          color={alreadySaved ? Colors.textMuted : Colors.accentBlue} 
+        />
         <View style={{ flex: 1 }}>
-          <Text style={styles.resultCity}>{item.name}</Text>
-          <Text style={styles.resultCountry}>
+          <Text style={[styles.resultCity, alreadySaved && styles.resultCityDisabled]}>
+            {item.name}
+          </Text>
+          <Text style={[styles.resultCountry, alreadySaved && styles.resultCountryDisabled]}>
             {item.state ? `${item.state}, ` : ''}
             {item.country}
           </Text>
         </View>
       </View>
-      {adding === `${item.lat}-${item.lon}` ? (
+      {alreadySaved ? (
+        <View style={styles.savedBadge}>
+          <Ionicons name="checkmark-circle" size={22} color={Colors.accentGreen} />
+        </View>
+      ) : adding === `${item.lat}-${item.lon}` ? (
         <ActivityIndicator size="small" color={Colors.accentBlue} />
       ) : (
         <Ionicons name="add-circle-outline" size={22} color={Colors.accentGreen} />
       )}
     </TouchableOpacity>
   );
+  };
 
   const renderSavedLocation = ({ item }: { item: SavedLocation }) => {
     const weather = locationWeather[item.id];
@@ -437,6 +461,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  resultCardDisabled: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  resultCityDisabled: {
+    color: Colors.textMuted,
+  },
+  resultCountryDisabled: {
+    color: 'rgba(148, 163, 184, 0.5)',
+  },
+  savedBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Saved
   savedSection: {

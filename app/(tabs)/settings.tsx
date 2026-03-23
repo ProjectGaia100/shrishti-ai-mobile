@@ -199,8 +199,8 @@ export default function SettingsScreen() {
                       <MaterialCommunityIcons name="crown" size={18} color="#FACC15" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.premiumTitle}>Unlock Premium Access</Text>
-                      <Text style={styles.premiumSub}>Unlimited places, priority alerts, and advanced insights</Text>
+                      <Text style={[styles.premiumTitle, { color: colors.textPrimary }]}>Unlock Premium Access</Text>
+                      <Text style={[styles.premiumSub, { color: colors.textMuted }]}>Unlimited places, priority alerts, and advanced insights</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                   </LinearGradient>
@@ -322,13 +322,15 @@ export default function SettingsScreen() {
               style={styles.logoutBtn}
               activeOpacity={0.8}
             >
-              <LinearGradient
-                colors={['rgba(239, 68, 68, 0.15)', 'rgba(239, 68, 68, 0.05)']}
-                style={styles.logoutBtnInner}
+              <View
+                style={[
+                  styles.logoutBtnInner,
+                  { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.08)' },
+                ]}
               >
                 <Ionicons name="log-out-outline" size={20} color={Colors.accentRed} />
                 <Text style={styles.logoutBtnText}>Log Out</Text>
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </ScrollView>
         </Animated.View>
@@ -490,12 +492,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(250,204,21,0.15)',
   },
   premiumTitle: {
-    color: Colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
   premiumSub: {
-    color: Colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },

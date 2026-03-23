@@ -481,7 +481,7 @@ export default function LocationsScreen() {
             ]}>
               {results.slice(0, 8).map((item, i) => (
                 <TouchableOpacity
-                  key={`${item.lat}-${item.lon}`}
+                  key={`${item.name}-${item.country}-${item.state || ''}-${item.lat}-${item.lon}-${i}`}
                   style={[
                     s.resultRow,
                     i < Math.min(results.length, 8) - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },

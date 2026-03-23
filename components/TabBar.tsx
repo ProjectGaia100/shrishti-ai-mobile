@@ -29,7 +29,7 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { name: 'index',     label: 'Home',     icon: 'home-outline',          activeIcon: 'home',          color: '#818CF8' },
+  { name: 'index',     label: 'Home',     icon: 'home-outline',          activeIcon: 'home',          color: '#FFFFFF' },
   { name: 'alerts',    label: 'Alerts',   icon: 'notifications-outline', activeIcon: 'notifications', color: '#F87171' },
   { name: 'locations', label: 'Places',   icon: 'location-outline',      activeIcon: 'location',      color: '#60A5FA' },
   { name: 'settings',  label: 'Settings', icon: 'settings-outline',      activeIcon: 'settings',      color: '#94A3B8' },
@@ -96,7 +96,7 @@ function TabItem({
     >
       <Animated.View style={[styles.tabInner, { transform: [{ scale: scaleAnim }] }]}>
 
-        {/* Active indicator dot */}
+        {/* Active indicator dash */}
         <Animated.View
           style={[styles.dot, { backgroundColor: tab.color, opacity: dotOpacity }]}
         />
@@ -246,8 +246,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   dot: {
-    width: 4,
-    height: 4,
+    width: 12,
+    height: 3,
     borderRadius: 2,
     marginBottom: 6,
   },
