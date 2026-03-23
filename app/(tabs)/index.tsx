@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
-  Image,
   PanResponder,
   Animated,
 } from 'react-native';
@@ -47,7 +46,7 @@ type LocationEntry = {
 
 export default function HomeScreen() {
   const { data, loading, error, refresh, fetchCoords, fetchByGPS } = useWeather();
-  const { savedLocations, defaultLocation, settings, user } = useApp();
+  const { savedLocations, defaultLocation, settings } = useApp();
   const { setTabBarTint } = useWeatherTheme();
   const { colors, isDark } = useTheme();
 
@@ -206,18 +205,7 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* Right: profile */}
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/settings')}
-            style={s.iconBtn}
-            activeOpacity={0.7}
-          >
-            {user?.avatar ? (
-              <Image source={{ uri: user.avatar }} style={s.profileIcon} />
-            ) : (
-              <Ionicons name="person-circle-outline" size={26} color="#fff" />
-            )}
-          </TouchableOpacity>
+          <View style={{ width: 44 }} />
         </View>
 
         {/* ─── Weather Content ─────────────────────────────────────── */}
@@ -440,13 +428,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems:      'center',
     justifyContent:  'center',
-  },
-  profileIcon: {
-    width:        32,
-    height:       32,
-    borderRadius: 16,
-    borderWidth:  2,
-    borderColor:  'rgba(255,255,255,0.6)',
   },
 
   scroll: {

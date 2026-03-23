@@ -182,6 +182,32 @@ export default function SettingsScreen() {
               </BlurView>
             </View>
 
+            {/* ─── Premium ───────────────────────────────────────────── */}
+            {!isPremium && (
+              <>
+                <SectionHeader title="PREMIUM" />
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/premium')}
+                  style={styles.premiumBtn}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['rgba(99,102,241,0.24)', 'rgba(139,92,246,0.14)']}
+                    style={styles.premiumBtnInner}
+                  >
+                    <View style={styles.premiumIconWrap}>
+                      <MaterialCommunityIcons name="crown" size={18} color="#FACC15" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.premiumTitle}>Unlock Premium Access</Text>
+                      <Text style={styles.premiumSub}>Unlimited places, priority alerts, and advanced insights</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
+
             {/* ─── Units & Metrics ───────────────────────────────────── */}
             <SectionHeader title="UNITS & METRICS" />
             <View style={[styles.cardWrapper, { borderColor: cardBorder }]}>
@@ -440,6 +466,38 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  premiumBtn: {
+    marginHorizontal: 16,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.24)',
+  },
+  premiumBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  premiumIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(250,204,21,0.15)',
+  },
+  premiumTitle: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  premiumSub: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
   // About
   aboutRow: {

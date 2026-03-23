@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
-import { supabase } from '../utils/supabase';
+import { supabase, getSessionSafe } from '../utils/supabase';
 import { selectionHaptic, successHaptic, errorHaptic } from '../utils/haptics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ export default function SettingsContent({ showMenuButton, onMenuPress }: Props) 
     setNameError('');
     setSavingName(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSessionSafe();
       if (!session?.user) throw new Error('Not logged in');
       const { error } = await supabase
         .from('profiles')

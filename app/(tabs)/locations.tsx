@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Pressable,
+  Modal,
   Dimensions,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -18,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
@@ -35,59 +37,6 @@ import { useToast } from '../../context/ToastContext';
 import { successHaptic } from '../../utils/haptics';
 import { useTheme } from '../../context/ThemeContext';
 import { useTabBarHeight } from '../../context/TabBarHeightContext';
-
-// ─── Tabs ─────────────────────────────────────────────────────────────────────
-const TABS = ['Map', 'Saved'] as const;
-type Tab = (typeof TABS)[number];
-
-// ─── Tab Switcher ─────────────────────────────────────────────────────────────
-function TabSwitcher({
-  active,
-  onChange,
-  isDark,
-}: {
-  active: Tab;
-  onChange: (t: Tab) => void;
-  isDark: boolean;
-}) {
-  const pillAnim = useRef(new Animated.Value(0)).current;
-  const [tabWidth, setTabWidth] = useState(0);
-
-  useEffect(() => {
-    Animated.spring(pillAnim, {
-      toValue: active === 'Map' ? 0 : 1,
-      useNativeDriver: true,
-      tension: 90,
-      friction: 15,
-    }).start();
-  }, [active]);
-
-  const pillX = pillAnim.interpolate({ inputRange: [0, 1], outputRange: [2, tabWidth + 2] });
-  const trackBg     = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-  const pillBg      = isDark ? 'rgba(99,102,241,0.28)' : 'rgba(99,102,241,0.10)';
-  const activeColor = isDark ? '#A5B4FC' : '#4F46E5';
-  const mutedColor  = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(15,23,42,0.38)';
-
-  return (
-    <View
-      style={[s.tabTrack, { backgroundColor: trackBg }]}
-      onLayout={(e) => setTabWidth((e.nativeEvent.layout.width - 4) / 2)}
-    >
-      <Animated.View style={[s.tabPill, { width: tabWidth, backgroundColor: pillBg, transform: [{ translateX: pillX }] }]} />
-      {TABS.map((tab) => (
-        <Pressable key={tab} style={[s.tabBtn, { width: tabWidth }]} onPress={() => onChange(tab)}>
-          <Ionicons
-            name={tab === 'Map' ? 'map-outline' : 'bookmark-outline'}
-            size={14}
-            color={active === tab ? activeColor : mutedColor}
-            style={{ marginRight: 5 }}
-          />
-          <Text style={[s.tabLabel, { color: active === tab ? activeColor : mutedColor }]}>{tab}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
 
 // ─── Leaflet HTML ─────────────────────────────────────────────────────────────
 // Long-press fix: use map.on('contextmenu') — Leaflet fires this natively on
@@ -198,7 +147,7 @@ function buildMapHTML(dark: boolean, locations: SavedLocation[]): string {
 }
 
 // ─── Saved Card ───────────────────────────────────────────────────────────────
-const ACCENT_COLORS = ['#818CF8','#34D399','#F87171','#FBBF24','#60A5FA','#F472B6','#A78BFA'];
+const ACCENT_COLORS = ['#818CF8', '#60A5FA', '#6366F1', '#7C3AED', '#8B5CF6', '#A78BFA', '#93C5FD'];
 
 function SavedCard({
   item,
@@ -271,9 +220,9 @@ function SavedCard({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={onDelete}
-                style={[s.actionBtn, { backgroundColor: 'rgba(239,68,68,0.08)' }]}
+                style={[s.actionBtn, { backgroundColor: 'rgba(139,92,246,0.12)' }]}
               >
-                <Ionicons name="trash-outline" size={15} color="#F87171" />
+                <Ionicons name="trash-outline" size={15} color="#A78BFA" />
               </TouchableOpacity>
             </View>
           </View>
@@ -291,7 +240,7 @@ export default function LocationsScreen() {
   const { tabBarHeight }    = useTabBarHeight();
   const webViewRef          = useRef<WebView>(null);
 
-  const [activeTab, setActiveTab]     = useState<Tab>('Map');
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
   const [query, setQuery]             = useState('');
   const [results, setResults]         = useState<GeocodingResult[]>([]);
   const [searching, setSearching]     = useState(false);
@@ -383,11 +332,6 @@ export default function LocationsScreen() {
       const res = await searchCities(q);
       setResults(res);
       setShowResults(true);
-      if (res.length > 0) {
-        webViewRef.current?.injectJavaScript(
-          `handle(JSON.stringify({type:'flyTo',lat:${res[0].lat},lon:${res[0].lon},zoom:10}));true;`
-        );
-      }
     } catch {
       showToast({ type: 'error', message: 'Search failed — check connection' });
     } finally {
@@ -400,18 +344,18 @@ export default function LocationsScreen() {
     try {
       const ok = await addLocation({ city: item.name, country: item.country, lat: item.lat, lon: item.lon });
       if (!ok) {
-        showToast({ type: 'error', message: savedLocations.length >= 3 && !isPremium ? 'Upgrade for unlimited locations' : 'Already saved' });
+        if (!isPremium && savedLocations.length >= 3) {
+          showToast({ type: 'info', message: 'Free plan supports up to 3 places. Upgrade to continue.' });
+          router.push('/(tabs)/premium');
+        } else {
+          showToast({ type: 'error', message: 'Location already saved.' });
+        }
       } else {
         successHaptic();
         showToast({ type: 'success', message: `${item.name} saved!` });
         setResults([]);
         setShowResults(false);
         setQuery('');
-        setTimeout(() => {
-          webViewRef.current?.injectJavaScript(
-            `handle(JSON.stringify({type:'flyTo',lat:${item.lat},lon:${item.lon},zoom:11,addMarker:true}));true;`
-          );
-        }, 100);
       }
     } finally {
       setAdding(null);
@@ -426,12 +370,12 @@ export default function LocationsScreen() {
   }, [removeLocation]);
 
   const flyTo = useCallback((loc: SavedLocation) => {
-    setActiveTab('Map');
+    setMapPickerVisible(true);
     setTimeout(() => {
       webViewRef.current?.injectJavaScript(
-        `handle(JSON.stringify({type:'flyTo',lat:${loc.lat},lon:${loc.lon},zoom:11}));true;`
+        `handle(JSON.stringify({type:'flyTo',lat:${loc.lat},lon:${loc.lon},zoom:11,addMarker:true}));true;`
       );
-    }, 200);
+    }, 220);
   }, []);
 
   const clearSearch = useCallback(() => {
@@ -470,245 +414,203 @@ export default function LocationsScreen() {
             </LinearGradient>
           </View>
 
-          {/* ── Tab Switcher ──────────────────────────────────── */}
-          <View style={s.tabRow}>
-            <TabSwitcher active={activeTab} onChange={setActiveTab} isDark={isDark} />
+          <View style={s.searchSection}>
+            <BlurView intensity={isDark ? 50 : 70} tint={blurTint as any} style={s.searchBlur}>
+              <Ionicons name="search" size={17} color={colors.textMuted} />
+              <TextInput
+                style={[s.searchInput, { color: colors.textPrimary }]}
+                placeholder="Search city to add..."
+                placeholderTextColor={colors.textMuted}
+                value={query}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  if (!t) { setResults([]); setShowResults(false); }
+                }}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+                autoCorrect={false}
+                autoCapitalize="words"
+              />
+              {searching ? (
+                <ActivityIndicator size="small" color="#818CF8" />
+              ) : query.length > 0 ? (
+                <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                onPress={handleSearch}
+                disabled={searching || !query.trim()}
+                style={s.goBtn}
+              >
+                <LinearGradient colors={['#6366F1','#8B5CF6']} style={s.goBtnGrad}>
+                  <Ionicons name="arrow-forward" size={15} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+            </BlurView>
+
+            <TouchableOpacity
+              onPress={() => setMapPickerVisible(true)}
+              style={s.customMapBtn}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="map-outline" size={16} color="#818CF8" />
+              <Text style={s.customMapBtnText}>Enter Custom Location via Map</Text>
+            </TouchableOpacity>
+
+            {!isPremium && (
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/premium')}
+                style={s.upgradeBtn}
+                activeOpacity={0.85}
+              >
+                <Text style={s.upgradeBtnText}>Upgrade for Unlimited Places</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {/* ══ MAP TAB ══════════════════════════════════════════ */}
-          {activeTab === 'Map' && (
-            <View style={s.flex}>
-
-              <WebView
-                key={isDark ? 'dark' : 'light'}
-                ref={webViewRef}
-                source={{ html: buildMapHTML(isDark, savedLocations) }}
-                style={[s.webview, { backgroundColor: isDark ? '#0D1117' : '#E8EDF4' }]}
-                scrollEnabled={false}
-                javaScriptEnabled
-                domStorageEnabled
-                originWhitelist={['*']}
-                mixedContentMode="always"
-                onMessage={onWebViewMessage}
-              />
-
-              {/* Search bar overlay */}
-              <View style={s.searchOverlay}>
-                <BlurView intensity={isDark ? 60 : 75} tint={blurTint as any} style={s.searchBlur}>
-                  <Ionicons name="search" size={17} color={colors.textMuted} />
-                  <TextInput
-                    style={[s.searchInput, { color: colors.textPrimary }]}
-                    placeholder="Search for a city…"
-                    placeholderTextColor={colors.textMuted}
-                    value={query}
-                    onChangeText={(t) => {
-                      setQuery(t);
-                      if (!t) { setResults([]); setShowResults(false); }
-                    }}
-                    onSubmitEditing={handleSearch}
-                    returnKeyType="search"
-                    autoCorrect={false}
-                    autoCapitalize="words"
-                  />
-                  {searching ? (
-                    <ActivityIndicator size="small" color="#818CF8" />
-                  ) : query.length > 0 ? (
-                    <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity
-                    onPress={handleSearch}
-                    disabled={searching || !query.trim()}
-                    style={s.goBtn}
-                  >
-                    <LinearGradient colors={['#6366F1','#8B5CF6']} style={s.goBtnGrad}>
-                      <Ionicons name="arrow-forward" size={15} color="#fff" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </BlurView>
-              </View>
-
-              {/* Search results dropdown */}
-              {results.length > 0 && showResults && (
-                <Animated.View style={[
-                  s.resultsDropdown,
-                  {
-                    backgroundColor: isDark ? 'rgba(13,17,23,0.97)' : 'rgba(255,255,255,0.97)',
-                    borderColor: colors.cardBorder,
-                    opacity: resultAnim,
-                    transform: [{ translateY: resultAnim.interpolate({ inputRange:[0,1], outputRange:[-6,0] }) }],
-                  },
-                ]}>
-                  {results.slice(0, 5).map((item, i) => (
-                    <TouchableOpacity
-                      key={`${item.lat}-${item.lon}`}
-                      style={[
-                        s.resultRow,
-                        i < Math.min(results.length, 5) - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
-                      ]}
-                      onPress={() => handleAddResult(item)}
-                      activeOpacity={0.72}
-                    >
-                      <View style={s.resultDot} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.resultCity, { color: colors.textPrimary }]}>{item.name}</Text>
-                        <Text style={[s.resultSub, { color: colors.textMuted }]}>
-                          {item.state ? `${item.state} · ` : ''}{item.country}
-                        </Text>
+          {results.length > 0 && showResults && (
+            <Animated.View style={[
+              s.resultsList,
+              {
+                backgroundColor: isDark ? 'rgba(13,17,23,0.97)' : 'rgba(255,255,255,0.97)',
+                borderColor: colors.cardBorder,
+                opacity: resultAnim,
+                transform: [{ translateY: resultAnim.interpolate({ inputRange:[0,1], outputRange:[-6,0] }) }],
+              },
+            ]}>
+              {results.slice(0, 8).map((item, i) => (
+                <TouchableOpacity
+                  key={`${item.lat}-${item.lon}`}
+                  style={[
+                    s.resultRow,
+                    i < Math.min(results.length, 8) - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+                  ]}
+                  onPress={() => handleAddResult(item)}
+                  activeOpacity={0.72}
+                >
+                  <View style={s.resultDot} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.resultCity, { color: colors.textPrimary }]}>{item.name}</Text>
+                    <Text style={[s.resultSub, { color: colors.textMuted }]}>
+                      {item.state ? `${item.state} · ` : ''}{item.country}
+                    </Text>
+                  </View>
+                  {adding === `${item.lat}-${item.lon}`
+                    ? <ActivityIndicator size="small" color="#818CF8" />
+                    : (
+                      <View style={s.saveChip}>
+                        <Ionicons name="add" size={13} color="#818CF8" />
+                        <Text style={s.saveChipText}>Save</Text>
                       </View>
-                      {adding === `${item.lat}-${item.lon}`
-                        ? <ActivityIndicator size="small" color="#818CF8" />
-                        : (
-                          <View style={s.saveChip}>
-                            <Ionicons name="add" size={13} color="#818CF8" />
-                            <Text style={s.saveChipText}>Save</Text>
-                          </View>
-                        )
-                      }
-                    </TouchableOpacity>
-                  ))}
-                </Animated.View>
-              )}
-
-              {/* Zoom + locate controls */}
-              <View style={s.mapControls}>
-                <TouchableOpacity
-                  onPress={() => webViewRef.current?.injectJavaScript(`map.zoomIn();true;`)}
-                  style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)' }]}
-                >
-                  <Ionicons name="add" size={20} color={colors.textPrimary} />
+                    )
+                  }
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => webViewRef.current?.injectJavaScript(`map.zoomOut();true;`)}
-                  style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)', marginTop: 6 }]}
-                >
-                  <Ionicons name="remove" size={20} color={colors.textPrimary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => webViewRef.current?.injectJavaScript(`map.locate({setView:true,maxZoom:13});true;`)}
-                  style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)', marginTop: 12 }]}
-                >
-                  <Ionicons name="navigate" size={16} color="#6366F1" />
-                </TouchableOpacity>
-              </View>
+              ))}
+            </Animated.View>
+          )}
 
-              {/* Hold hint */}
-              <View style={s.hintPill} pointerEvents="none">
-                <BlurView intensity={50} tint={blurTint as any} style={s.hintInner}>
-                  <View style={s.hintDot} />
-                  <Text style={[s.hintText, { color: colors.textMuted }]}>
-                    Hold map to drop a pin
-                  </Text>
-                </BlurView>
-              </View>
+          {query.trim().length > 0 && showResults && results.length === 0 && !searching && (
+            <View style={s.noResultsWrap}>
+              <Text style={[s.noResultsText, { color: colors.textMuted }]}>No exact city match found.</Text>
+              <TouchableOpacity onPress={() => setMapPickerVisible(true)} activeOpacity={0.8}>
+                <Text style={s.noResultsLink}>Pick coordinates on map instead</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-              {/* Bottom drawer */}
-              <View style={[s.drawer, { paddingBottom: tabBarHeight + 8 }]}>
-                <BlurView intensity={isDark ? 80 : 90} tint={blurTint as any} style={s.drawerBlur}>
-                  <View style={s.drawerHandle} />
+          <View style={s.flex}>
+            {savedLocations.length === 0 ? (
+              <EmptyState
+                icon="location-outline"
+                title="No Saved Locations"
+                message="Search for a city above, or use custom location via map"
+                iconColor="#818CF8"
+              />
+            ) : (
+              <FlatList
+                data={savedLocations}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: tabBarHeight + 20 }}
+                initialNumToRender={FLATLIST_INITIAL_NUM_TO_RENDER}
+                maxToRenderPerBatch={FLATLIST_MAX_TO_RENDER_PER_BATCH}
+                windowSize={FLATLIST_WINDOW_SIZE}
+                removeClippedSubviews
+                renderItem={({ item, index }) => (
+                  <SavedCard
+                    item={item}
+                    index={index}
+                    weather={locationWeather[item.id]}
+                    isDefault={defaultLocation?.id === item.id}
+                    isDark={isDark}
+                    colors={colors}
+                    onFlyTo={() => flyTo(item)}
+                    onSetDefault={() => setDefaultLocation(defaultLocation?.id === item.id ? null : item.id)}
+                    onDelete={() => handleDelete(item.id, item.city)}
+                  />
+                )}
+              />
+            )}
+          </View>
 
-                  {savedLocations.length > 0 ? (
-                    <>
-                      <Text style={[s.drawerLabel, { color: colors.textMuted }]}>SAVED LOCATIONS</Text>
-                      <FlatList
-                        data={savedLocations}
-                        keyExtractor={(i) => i.id}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={s.chipsRow}
-                        renderItem={({ item }) => {
-                          const w = locationWeather[item.id];
-                          const isDef = defaultLocation?.id === item.id;
-                          return (
-                            <TouchableOpacity
-                              onPress={() => flyTo(item)}
-                              activeOpacity={0.75}
-                              style={[s.chip, {
-                                backgroundColor: isDef
-                                  ? (isDark ? 'rgba(250,204,21,0.1)' : 'rgba(250,204,21,0.08)')
-                                  : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
-                                borderColor: isDef ? 'rgba(250,204,21,0.35)' : colors.cardBorder,
-                              }]}
-                            >
-                              <View style={s.chipTop}>
-                                <Ionicons name="location" size={11} color={isDef ? '#FACC15' : '#818CF8'} />
-                                <Text style={[s.chipCity, { color: colors.textPrimary }]} numberOfLines={1}>{item.city}</Text>
-                              </View>
-                              <Text style={[s.chipTemp, { color: colors.textMuted }]}>
-                                {w ? `${Math.round(w.temp)}°` : '—'}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <View style={s.drawerEmpty}>
-                      <Ionicons name="hand-left-outline" size={16} color={colors.textMuted} />
-                      <Text style={[s.drawerEmptyText, { color: colors.textMuted }]}>
-                        Hold the map or search a city to add your first location
-                      </Text>
-                    </View>
-                  )}
-
+          <Modal
+            visible={mapPickerVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setMapPickerVisible(false)}
+          >
+            <View style={s.mapModalRoot}>
+              <Pressable style={s.mapModalBackdrop} onPress={() => setMapPickerVisible(false)} />
+              <View style={[s.mapModalCard, { backgroundColor: isDark ? '#0D1117' : '#F8FAFC' }]}>
+                <View style={s.mapModalHeader}>
+                  <Text style={[s.mapModalTitle, { color: colors.textPrimary }]}>Custom Location Picker</Text>
                   <TouchableOpacity
-                    onPress={() => showToast({ type: 'info', message: 'Search above or hold the map to pin a spot' })}
-                    style={s.addBtn}
-                    activeOpacity={0.85}
+                    style={s.mapModalClose}
+                    onPress={() => setMapPickerVisible(false)}
+                    activeOpacity={0.8}
                   >
-                    <LinearGradient
-                      colors={['#6366F1','#4F46E5']}
-                      style={s.addBtnGrad}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    >
-                      <Ionicons name="add-circle-outline" size={18} color="#fff" />
-                      <Text style={s.addBtnText}>Add New City</Text>
-                    </LinearGradient>
+                    <Ionicons name="close" size={18} color={colors.textMuted} />
                   </TouchableOpacity>
-                </BlurView>
+                </View>
+
+                <Text style={[s.mapModalHint, { color: colors.textMuted }]}>Long-press on the map to drop a pin and save coordinates.</Text>
+
+                <WebView
+                  key={`picker-light-${savedLocations.length}`}
+                  ref={webViewRef}
+                  source={{ html: buildMapHTML(false, savedLocations) }}
+                  style={[s.mapModalWebview, { backgroundColor: '#E8EDF4' }]}
+                  scrollEnabled={false}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  originWhitelist={['*']}
+                  mixedContentMode="always"
+                  onMessage={onWebViewMessage}
+                />
+
+                <View style={s.mapModalControls}>
+                  <TouchableOpacity
+                    onPress={() => webViewRef.current?.injectJavaScript(`map.zoomIn();true;`)}
+                    style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)' }]}
+                  >
+                    <Ionicons name="add" size={20} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => webViewRef.current?.injectJavaScript(`map.zoomOut();true;`)}
+                    style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)', marginTop: 6 }]}
+                  >
+                    <Ionicons name="remove" size={20} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => webViewRef.current?.injectJavaScript(`map.locate({setView:true,maxZoom:13});true;`)}
+                    style={[s.ctrlBtn, { backgroundColor: isDark ? 'rgba(13,17,23,0.88)' : 'rgba(255,255,255,0.92)', marginTop: 12 }]}
+                  >
+                    <Ionicons name="navigate" size={16} color="#6366F1" />
+                  </TouchableOpacity>
+                </View>
               </View>
-
             </View>
-          )}
-
-          {/* ══ SAVED TAB ════════════════════════════════════════ */}
-          {activeTab === 'Saved' && (
-            <View style={s.flex}>
-              {savedLocations.length === 0 ? (
-                <EmptyState
-                  icon="location-outline"
-                  title="No Saved Locations"
-                  message="Switch to Map, search a city or hold the map to pin a spot"
-                  iconColor="#818CF8"
-                />
-              ) : (
-                <FlatList
-                  data={savedLocations}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: tabBarHeight + 20 }}
-                  initialNumToRender={FLATLIST_INITIAL_NUM_TO_RENDER}
-                  maxToRenderPerBatch={FLATLIST_MAX_TO_RENDER_PER_BATCH}
-                  windowSize={FLATLIST_WINDOW_SIZE}
-                  removeClippedSubviews
-                  renderItem={({ item, index }) => (
-                    <SavedCard
-                      item={item}
-                      index={index}
-                      weather={locationWeather[item.id]}
-                      isDefault={defaultLocation?.id === item.id}
-                      isDark={isDark}
-                      colors={colors}
-                      onFlyTo={() => flyTo(item)}
-                      onSetDefault={() => setDefaultLocation(defaultLocation?.id === item.id ? null : item.id)}
-                      onDelete={() => handleDelete(item.id, item.city)}
-                    />
-                  )}
-                />
-              )}
-            </View>
-          )}
+          </Modal>
 
         </Animated.View>
       </SafeAreaView>
@@ -744,6 +646,42 @@ const s = StyleSheet.create({
   },
   counterNum: { fontSize: 18, fontWeight: '800', color: '#818CF8' },
   counterDen: { fontSize: 12, fontWeight: '600', marginLeft: 1 },
+
+  searchSection: { paddingHorizontal: 16, gap: 10, marginBottom: 10 },
+  customMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.28)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+  },
+  customMapBtnText: { fontSize: 13, fontWeight: '600', color: '#818CF8' },
+  upgradeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.35)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(250,204,21,0.08)',
+  },
+  upgradeBtnText: { fontSize: 13, fontWeight: '700', color: '#FACC15' },
+  noResultsWrap: { paddingHorizontal: 18, marginBottom: 10 },
+  noResultsText: { fontSize: 13 },
+  noResultsLink: { marginTop: 4, fontSize: 13, fontWeight: '700', color: '#818CF8' },
+  resultsList: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
 
   // Tabs
   tabRow: { paddingHorizontal: 16, marginBottom: 8 },
@@ -925,4 +863,47 @@ const s = StyleSheet.create({
   defaultChipText: { fontSize: 9, fontWeight: '800', color: '#FACC15', letterSpacing: 1 },
   cardActions: { flexDirection: 'row', gap: 6 },
   actionBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+
+  mapModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(2,6,23,0.45)',
+  },
+  mapModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapModalCard: {
+    height: '82%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderColor: 'rgba(99,102,241,0.2)',
+  },
+  mapModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  mapModalTitle: { fontSize: 17, fontWeight: '700' },
+  mapModalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(148,163,184,0.15)',
+  },
+  mapModalHint: { fontSize: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  mapModalWebview: { flex: 1 },
+  mapModalControls: {
+    position: 'absolute',
+    right: 12,
+    top: '24%',
+    zIndex: 10,
+    alignItems: 'center',
+  },
 });

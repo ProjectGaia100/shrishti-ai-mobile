@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
-  Alert,
+  Modal,
+  Pressable,
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -119,6 +120,8 @@ export default function PremiumScreen() {
   const { openDrawer } = useDrawer();
   const { isPremium, setPremium } = useApp();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
+  const [dialogType, setDialogType] = useState<'none' | 'confirm' | 'activated' | 'already'>('none');
+  const [subscribing, setSubscribing] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const crownAnim = useRef(new Animated.Value(0)).current;
 
@@ -141,24 +144,20 @@ export default function PremiumScreen() {
 
   const handleSubscribe = () => {
     if (isPremium) {
-      Alert.alert('Already Premium', 'You already have a Premium subscription!');
+      setDialogType('already');
       return;
     }
-    Alert.alert(
-      'Start Free Trial',
-      `Subscribe to Weather Pro ${selectedPlan === 'yearly' ? 'Yearly ($29.99/yr)' : 'Monthly ($4.99/mo)'}?\n\n7-day free trial included.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Subscribe',
-          onPress: async () => {
-            await setPremium(true);
-            Alert.alert('Welcome to Pro! 🎉', 'You now have access to all premium features.');
-          },
-        },
-      ],
-    );
+    setDialogType('confirm');
   };
+
+  const confirmUpgrade = async () => {
+    setSubscribing(true);
+    await setPremium(true);
+    setSubscribing(false);
+    setDialogType('activated');
+  };
+
+  const planText = selectedPlan === 'yearly' ? 'Yearly (Rs 2499/yr)' : 'Monthly (Rs 399/mo)';
 
   return (
     <View style={styles.container}>
@@ -265,7 +264,7 @@ export default function PremiumScreen() {
                     </View>
                     <View style={styles.planInfo}>
                       <Text style={styles.planName}>Yearly</Text>
-                      <Text style={styles.planPrice}>$29.99</Text>
+                      <Text style={styles.planPrice}>Rs 2499</Text>
                       <Text style={styles.planPeriod}>/year</Text>
                     </View>
                     <Text style={styles.planSavings}>Save 50% vs monthly</Text>
@@ -292,7 +291,7 @@ export default function PremiumScreen() {
                   <BlurView intensity={15} tint="dark" style={styles.planCardInner}>
                     <View style={styles.planInfo}>
                       <Text style={styles.planName}>Monthly</Text>
-                      <Text style={styles.planPrice}>$4.99</Text>
+                      <Text style={styles.planPrice}>Rs 399</Text>
                       <Text style={styles.planPeriod}>/month</Text>
                     </View>
                     <View
@@ -322,6 +321,66 @@ export default function PremiumScreen() {
               )}
             </View>
           </ScrollView>
+
+          <Modal visible={dialogType !== 'none'} transparent animationType="fade" onRequestClose={() => setDialogType('none')}>
+            <Pressable style={styles.dialogBackdrop} onPress={() => !subscribing && setDialogType('none')}>
+              <Pressable style={styles.dialogCard} onPress={(e) => e.stopPropagation()}>
+                <LinearGradient
+                  colors={['rgba(30,41,59,0.98)', 'rgba(49,46,129,0.96)']}
+                  style={styles.dialogCardInner}
+                >
+                  <View style={styles.dialogIconWrap}>
+                    <Ionicons
+                      name={dialogType === 'activated' ? 'checkmark-circle' : 'diamond-outline'}
+                      size={24}
+                      color={dialogType === 'activated' ? '#4ADE80' : '#A5B4FC'}
+                    />
+                  </View>
+
+                  <Text style={styles.dialogTitle}>
+                    {dialogType === 'confirm' && 'Confirm Upgrade'}
+                    {dialogType === 'activated' && 'Premium Activated'}
+                    {dialogType === 'already' && 'Already Premium'}
+                  </Text>
+
+                  <Text style={styles.dialogMessage}>
+                    {dialogType === 'confirm' && `Subscribe to Weather Pro ${planText}?\n7-day free trial included.`}
+                    {dialogType === 'activated' && 'You now have access to all premium features.'}
+                    {dialogType === 'already' && 'You already have a Premium subscription.'}
+                  </Text>
+
+                  {dialogType === 'confirm' ? (
+                    <View style={styles.dialogActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.dialogBtn, styles.dialogBtnGhost]}
+                        onPress={() => setDialogType('none')}
+                        disabled={subscribing}
+                      >
+                        <Text style={styles.dialogBtnGhostText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.dialogBtn, styles.dialogBtnPrimary]}
+                        onPress={confirmUpgrade}
+                        disabled={subscribing}
+                      >
+                        <Text style={styles.dialogBtnPrimaryText}>{subscribing ? 'Subscribing...' : 'Subscribe'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.dialogBtn, styles.dialogBtnPrimary, styles.dialogSingleActionBtn, { alignSelf: 'stretch' }]}
+                      onPress={() => setDialogType('none')}
+                    >
+                      <View style={styles.dialogBtnContent}>
+                        <Ionicons name="checkmark-circle" size={16} color="#F8FAFF" />
+                        <Text style={styles.dialogBtnPrimaryText}>Continue</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </Pressable>
+          </Modal>
         </Animated.View>
       </SafeAreaView>
     </View>
@@ -535,5 +594,95 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: 12,
+  },
+  dialogBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  dialogCard: {
+    width: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(129,140,248,0.35)',
+  },
+  dialogCardInner: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  dialogIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(129,140,248,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  dialogTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  dialogMessage: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  dialogActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dialogBtn: {
+    flex: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: 12,
+  },
+  dialogBtnGhost: {
+    backgroundColor: 'rgba(148,163,184,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
+  },
+  dialogBtnGhostText: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dialogBtnPrimary: {
+    backgroundColor: '#6366F1',
+    borderWidth: 1,
+    borderColor: 'rgba(165,180,252,0.5)',
+    minHeight: 44,
+  },
+  dialogSingleActionBtn: {
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  dialogBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 22,
+    gap: 8,
+  },
+  dialogBtnPrimaryText: {
+    color: '#F8FAFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });

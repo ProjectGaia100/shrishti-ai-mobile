@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
-  Image,
   TextInput,
   ActivityIndicator,
   Keyboard,
@@ -19,7 +18,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { useDrawer } from '../../context/DrawerContext';
 
 import { useWeather } from '../../hooks/useWeather';
@@ -42,7 +40,7 @@ const { height } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const { data, loading, error, refresh, fetchCoords, fetchByGPS } = useWeather();
-  const { savedLocations, defaultLocation, settings, user } = useApp();
+  const { savedLocations, defaultLocation, settings } = useApp();
   const { openDrawer } = useDrawer();
   const { showToast } = useToast();
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -141,20 +139,7 @@ export default function HomeScreen() {
             <Ionicons name="chevron-down" size={14} color={Colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => router.push('/(drawer)/settings')}
-            style={styles.iconBtn}
-            activeOpacity={0.7}
-            accessibilityLabel="Open settings"
-            accessibilityRole="button"
-            accessibilityHint="Opens settings and profile screen"
-          >
-            {user?.avatar ? (
-              <Image source={{ uri: user.avatar }} style={styles.profileIcon} />
-            ) : (
-              <Ionicons name="person-circle-outline" size={26} color="#fff" />
-            )}
-          </TouchableOpacity>
+          <View style={{ width: touchTarget.minimum }} />
         </View>
 
         {/* ─── Weather Content ────────────────────────────────────────── */}
@@ -375,13 +360,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  profileIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.6)',
   },
   locationSelector: {
     flexDirection: 'row',

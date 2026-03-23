@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Animated,
   Platform,
+  Alert,
 } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useWeatherTheme } from '../context/WeatherThemeContext';
 import { useTheme } from '../context/ThemeContext';
+import { useApp } from '../context/AppContext';
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -28,7 +30,6 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { name: 'index',     label: 'Home',     icon: 'home-outline',          activeIcon: 'home',          color: '#818CF8' },
-  { name: 'map',       label: 'Map',      icon: 'map-outline',           activeIcon: 'map',           color: '#34D399' },
   { name: 'alerts',    label: 'Alerts',   icon: 'notifications-outline', activeIcon: 'notifications', color: '#F87171' },
   { name: 'locations', label: 'Places',   icon: 'location-outline',      activeIcon: 'location',      color: '#60A5FA' },
   { name: 'settings',  label: 'Settings', icon: 'settings-outline',      activeIcon: 'settings',      color: '#94A3B8' },
@@ -39,10 +40,14 @@ function TabItem({
   tab,
   isActive,
   onPress,
+  onPressIn,
+  onPressOut,
 }: {
   tab: TabDef;
   isActive: boolean;
   onPress: () => void;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
 }) {
   const { isDark } = useTheme();
   const inactiveColor = isDark ? 'rgba(255,255,255,0.40)' : 'rgba(15,23,42,0.32)';
@@ -82,7 +87,13 @@ function TabItem({
   });
 
   return (
-    <TouchableOpacity onPress={handlePress} style={styles.tabItem} activeOpacity={1}>
+    <TouchableOpacity
+      onPress={handlePress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={styles.tabItem}
+      activeOpacity={1}
+    >
       <Animated.View style={[styles.tabInner, { transform: [{ scale: scaleAnim }] }]}>
 
         {/* Active indicator dot */}
@@ -119,6 +130,43 @@ export default function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { tabBarTint } = useWeatherTheme();
   const { colors } = useTheme();
+  const { isPremium, setPremium } = useApp();
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRouteName = state.routes[state.index]?.name;
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const startPremiumResetHold = (routeName: string) => {
+    if (routeName !== 'settings' || !isPremium) return;
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+    }
+
+    resetTimerRef.current = setTimeout(async () => {
+      await setPremium(false);
+      Alert.alert('Premium Deactivated', 'Demo mode reset complete.');
+      resetTimerRef.current = null;
+    }, 10000);
+  };
+
+  const cancelPremiumResetHold = (routeName: string) => {
+    if (routeName !== 'settings') return;
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+  };
+
+  if (activeRouteName === 'premium') {
+    return null;
+  }
 
   // On home screen use weather tint, on other screens use theme bg
   const isHome = state.index === 0;
@@ -151,6 +199,8 @@ export default function TabBar({ state, navigation }: BottomTabBarProps) {
               key={route.key}
               tab={tab}
               isActive={isActive}
+              onPressIn={() => startPremiumResetHold(route.name)}
+              onPressOut={() => cancelPremiumResetHold(route.name)}
               onPress={() => {
                 const event = navigation.emit({
                   type: 'tabPress',

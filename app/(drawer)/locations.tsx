@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { useDrawer } from '../../context/DrawerContext';
 
 import { Colors } from '../../constants/Colors';
@@ -105,7 +106,10 @@ export default function LocationsScreen() {
             Alert.alert(
               'Location Limit',
               'Free users can save up to 3 locations. Upgrade to Premium for unlimited locations.',
-              [{ text: 'OK' }],
+              [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Go Premium', onPress: () => router.push('/(drawer)/premium') },
+              ],
             );
           } else {
             Alert.alert('Duplicate', 'This location is already saved.');

@@ -7,7 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
-import { supabase, DbProfile, DbSettings, DbSavedLocation } from '../utils/supabase';
+import { supabase, DbProfile, DbSettings, DbSavedLocation, getSessionSafe } from '../utils/supabase';
 import {
   StorageService,
   SavedLocation,
@@ -140,13 +140,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const bootstrap = async () => {
       try {
         // Race getSession() against a 4s timeout to prevent infinite spinner
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<{ data: { session: null } }>((resolve) =>
-            setTimeout(() => resolve({ data: { session: null } }), 4000)
-          ),
+        const session = await Promise.race([
+          getSessionSafe(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
         ]);
-        const { data: { session } } = sessionResult;
 
         if (session?.user && mounted) {
           await loadUserData(session.user.id, session.user.email ?? '');
@@ -259,7 +256,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await StorageService.setSettings(next);
 
       // Sync to Supabase if logged in
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSessionSafe();
       if (session?.user) {
         await supabase.from('settings').update({
           temp_unit: next.tempUnit,
@@ -287,7 +284,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       if (exists) return false;
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSessionSafe();
 
       if (session?.user) {
         // Insert into Supabase; use the returned UUID as the id
@@ -333,7 +330,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await StorageService.setDefaultLocationId(null);
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSessionSafe();
       if (session?.user) {
         await supabase.from('saved_locations').delete().eq('id', id).eq('user_id', session.user.id);
       }
@@ -346,7 +343,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setDefaultLocationId(id);
       await StorageService.setDefaultLocationId(id);
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getSessionSafe();
       if (session?.user) {
         // Clear all defaults then set the new one
         await supabase
@@ -370,7 +367,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsPremiumState(value);
     await StorageService.setPremium(value);
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getSessionSafe();
     if (session?.user) {
       await supabase.from('profiles').update({ is_premium: value }).eq('id', session.user.id);
     }
