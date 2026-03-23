@@ -168,26 +168,33 @@ export default function SettingsScreen() {
             {/* ─── Account Section ───────────────────────────────────── */}
             <SectionHeader title="ACCOUNT" />
             <View style={[styles.cardWrapper, { borderColor: cardBorder }]}>
-              <BlurView intensity={15} tint={blurTint} style={styles.profileCard}>
-                {user?.avatar ? (
-                  <Image source={{ uri: user.avatar }} style={styles.profileAvatar} />
-                ) : (
-                  <View style={[styles.profileAvatar, styles.avatarPlaceholder]}>
-                    <Ionicons name="person" size={28} color={avatarIconColor} />
-                  </View>
-                )}
-                <View style={styles.profileInfo}>
-                  <Text style={[styles.profileName, { color: colors.textPrimary }]}>{user?.name || 'User'}</Text>
-                  <Text style={[styles.profileEmail, { color: colors.textMuted }]}>{user?.email || 'user@email.com'}</Text>
-                  {isPremium && (
-                    <View style={styles.proBadge}>
-                      <MaterialCommunityIcons name="crown" size={10} color="#FACC15" />
-                      <Text style={styles.proBadgeText}>PRO</Text>
+              <TouchableOpacity
+                onPress={() => router.push('/(drawer)/profile')}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Open profile"
+              >
+                <BlurView intensity={15} tint={blurTint} style={styles.profileCard}>
+                  {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={styles.profileAvatar} />
+                  ) : (
+                    <View style={[styles.profileAvatar, styles.avatarPlaceholder]}>
+                      <Ionicons name="person" size={28} color={avatarIconColor} />
                     </View>
                   )}
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </BlurView>
+                  <View style={styles.profileInfo}>
+                    <Text style={[styles.profileName, { color: colors.textPrimary }]}>{user?.name || 'User'}</Text>
+                    <Text style={[styles.profileEmail, { color: colors.textMuted }]}>{user?.email || 'user@email.com'}</Text>
+                    {isPremium && (
+                      <View style={styles.proBadge}>
+                        <MaterialCommunityIcons name="crown" size={10} color="#FACC15" />
+                        <Text style={styles.proBadgeText}>PRO</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                </BlurView>
+              </TouchableOpacity>
             </View>
 
             {/* ─── Units & Metrics ───────────────────────────────────── */}

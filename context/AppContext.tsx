@@ -24,6 +24,7 @@ interface AppContextType {
   login: (email: string, password: string) => Promise<{ error: string | null }>;
   signup: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
+  updateProfileName: (name: string) => Promise<{ error: string | null }>;
 
   // Settings
   settings: AppSettings;
@@ -248,6 +249,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await StorageService.clearAuth();
   }, []);
 
+  const updateProfileName = useCallback(
+    async (name: string): Promise<{ error: string | null }> => {
+      const trimmed = name.trim();
+      if (!trimmed) return { error: 'Name cannot be empty' };
+
+      const session = await getSessionSafe();
+      if (!session?.user) return { error: 'Not authenticated' };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ name: trimmed, updated_at: new Date().toISOString() })
+        .eq('id', session.user.id);
+
+      if (error) return { error: error.message };
+
+      setUser((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, name: trimmed };
+        StorageService.setAuth(updated).catch(() => {
+          // Ignore cache write failures; source of truth remains Supabase.
+        });
+        return updated;
+      });
+
+      return { error: null };
+    },
+    [],
+  );
+
   // ─── Settings ─────────────────────────────────────────────────────────────
   const updateSettings = useCallback(
     async (updates: Partial<AppSettings>) => {
@@ -386,6 +416,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       login,
       signup,
       logout,
+      updateProfileName,
       settings,
       updateSettings,
       savedLocations,
@@ -403,6 +434,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       login,
       signup,
       logout,
+      updateProfileName,
       settings,
       updateSettings,
       savedLocations,

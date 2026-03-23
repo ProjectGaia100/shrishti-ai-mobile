@@ -17,6 +17,7 @@ export default function TabLayout() {
           <Tabs.Screen name="locations" options={{ title: 'Places' }} />
           <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
           <Tabs.Screen name="premium" options={{ href: null }} />
+          <Tabs.Screen name="profile" options={{ href: null }} />
         </Tabs>
       </WeatherThemeProvider>
     </TabBarHeightProvider>
