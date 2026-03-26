@@ -304,7 +304,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Locations ────────────────────────────────────────────────────────────
   const addLocation = useCallback(
     async (location: Omit<SavedLocation, 'id'>): Promise<boolean> => {
-      if (!isPremium && savedLocations.length >= 3) return false;
+      if (!isPremium && savedLocations.length >= 3) {
+        console.warn('[addLocation] Free user limit reached (3 locations)');
+        return false;
+      }
+      
       const exists = savedLocations.some(
         (l) =>
           l.lat.toFixed(LOCATION_PRECISION_DECIMALS) ===
@@ -312,38 +316,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           l.lon.toFixed(LOCATION_PRECISION_DECIMALS) ===
             location.lon.toFixed(LOCATION_PRECISION_DECIMALS),
       );
-      if (exists) return false;
+      if (exists) {
+        console.warn('[addLocation] Location already saved (duplicate)');
+        return false;
+      }
 
       const session = await getSessionSafe();
 
       if (session?.user) {
-        // Insert into Supabase; use the returned UUID as the id
-        const { data, error } = await supabase
-          .from('saved_locations')
-          .insert({
-            user_id: session.user.id,
-            city: location.city,
-            country: location.country,
-            lat: location.lat,
-            lon: location.lon,
-            is_default: false,
-          })
-          .select()
-          .single();
+        try {
+          // Insert into Supabase with timeout protection
+          const insertPromise = supabase
+            .from('saved_locations')
+            .insert({
+              user_id: session.user.id,
+              city: location.city,
+              country: location.country,
+              lat: location.lat,
+              lon: location.lon,
+              is_default: false,
+            })
+            .select()
+            .single();
 
-        if (error || !data) return false;
+          // 10-second timeout
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Insert timeout after 10s')), 10000)
+          );
 
-        const newLoc = dbLocationToApp(data as DbSavedLocation);
-        const updated = [...savedLocations, newLoc];
-        setSavedLocations(updated);
-        await StorageService.setLocations(updated);
-        return true;
+          const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as any;
+
+          if (error) {
+            console.error('[addLocation] Supabase insert error:', error);
+            return false;
+          }
+          
+          if (!data) {
+            console.error('[addLocation] No data returned from insert');
+            return false;
+          }
+
+          const newLoc = dbLocationToApp(data as DbSavedLocation);
+          const updated = [...savedLocations, newLoc];
+          setSavedLocations(updated);
+          await StorageService.setLocations(updated);
+          console.log('[addLocation] Successfully saved:', newLoc.city);
+          return true;
+        } catch (error) {
+          console.error('[addLocation] Exception:', error instanceof Error ? error.message : error);
+          // Fallback to offline mode on error
+          const newLoc: SavedLocation = { ...location, id: Date.now().toString() };
+          const updated = [...savedLocations, newLoc];
+          setSavedLocations(updated);
+          await StorageService.setLocations(updated);
+          console.log('[addLocation] Saved in offline mode:', newLoc.city);
+          return true;
+        }
       } else {
-        // Offline fallback
+        // Offline fallback when not logged in
         const newLoc: SavedLocation = { ...location, id: Date.now().toString() };
         const updated = [...savedLocations, newLoc];
         setSavedLocations(updated);
         await StorageService.setLocations(updated);
+        console.log('[addLocation] Saved offline (no session):', newLoc.city);
         return true;
       }
     },

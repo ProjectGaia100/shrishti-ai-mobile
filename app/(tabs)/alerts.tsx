@@ -9,14 +9,16 @@ import {
   Animated,
   Easing,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useTabBarHeight } from '../../context/TabBarHeightContext';
+import { supabase, getSessionSafe } from '../../utils/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Severity = 'danger' | 'watch' | 'advisory';
+type Severity = 'danger' | 'watch' | 'advisory' | 'normal';
 
 interface Alert {
   id: string;
@@ -24,9 +26,7 @@ interface Alert {
   title: string;
   location: string;
   description: string;
-  // Recent
   relativeTime?: string;
-  // History
   resolvedTime?: string;
   duration?: string;
 }
@@ -36,117 +36,61 @@ interface AlertSection {
   data: Alert[];
 }
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
-const RECENT_SECTIONS: AlertSection[] = [
-  {
-    title: '',
-    data: [
-      {
-        id: 'r1',
-        severity: 'danger',
-        title: 'Flood Warning',
-        location: 'Yokohama, Kanagawa',
-        description: 'Severe water level rise detected in Tsurumi River. Evacuation orders in effect for low-lying areas.',
-        relativeTime: '2 min ago',
-      },
-      {
-        id: 'r2',
-        severity: 'watch',
-        title: 'Severe Storm',
-        location: 'Kawasaki City',
-        description: 'Potential for high winds and localized flooding. Secure loose outdoor objects and monitor updates.',
-        relativeTime: '45 min ago',
-      },
-      {
-        id: 'r3',
-        severity: 'advisory',
-        title: 'Landslide Risk',
-        location: 'Hakone Region',
-        description: 'Saturated soil from recent rainfall increases risk of minor landslides near steep slopes.',
-        relativeTime: '2 hours ago',
-      },
-    ],
-  },
-  {
-    title: 'EARLIER TODAY',
-    data: [
-      {
-        id: 'r4',
-        severity: 'watch',
-        title: 'Wildfire Notice',
-        location: 'Chiba Prefecture',
-        description: 'Dry conditions and wind speeds have increased the risk of brush fires in northern forest districts.',
-        relativeTime: '6 hours ago',
-      },
-      {
-        id: 'r5',
-        severity: 'advisory',
-        title: 'Coastal High Surf',
-        location: 'Shonan Coast',
-        description: 'Wave heights of 3–4m expected through evening. Swimming and surfing not advised.',
-        relativeTime: '9 hours ago',
-      },
-    ],
-  },
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function riskToSeverity(riskScore: number): Severity {
+  if (riskScore >= 0.8) return 'danger';
+  if (riskScore >= 0.65) return 'watch';
+  return 'advisory';
+}
 
-const HISTORY_SECTIONS: AlertSection[] = [
-  {
-    title: 'YESTERDAY',
-    data: [
-      {
-        id: 'h1',
-        severity: 'danger',
-        title: 'Flash Flood',
-        location: 'Yokohama, Kanagawa',
-        description: 'Severe water level rise detected in Tsurumi River. Evacuation orders were lifted as water receded.',
-        resolvedTime: 'Resolved: 21:40',
-        duration: '4h 15m',
-      },
-      {
-        id: 'h2',
-        severity: 'watch',
-        title: 'Strong Winds',
-        location: 'Kawasaki City',
-        description: 'Potential for high winds and localized gusts up to 60 km/h. Warning expired.',
-        resolvedTime: 'Resolved: 15:20',
-        duration: '8h 00m',
-      },
-    ],
-  },
-  {
-    title: 'OCTOBER 24',
-    data: [
-      {
-        id: 'h3',
-        severity: 'advisory',
-        title: 'Coastal Swell',
-        location: 'Sagami Bay',
-        description: 'Small craft advisory for coastal areas due to incoming northern swell.',
-        resolvedTime: 'Resolved: 10/24 18:00',
-        duration: '12h 30m',
-      },
-      {
-        id: 'h4',
-        severity: 'watch',
-        title: 'Heavy Rain Warning',
-        location: 'Kanagawa Prefecture',
-        description: 'Rainfall totals of 80–120 mm recorded across the prefecture. Flood watches downgraded.',
-        resolvedTime: 'Resolved: 10/24 09:15',
-        duration: '6h 45m',
-      },
-      {
-        id: 'h5',
-        severity: 'danger',
-        title: 'River Overflow Alert',
-        location: 'Tama River Basin',
-        description: 'River exceeded flood stage. Levee inspection crews deployed. Situation stabilised.',
-        resolvedTime: 'Resolved: 10/24 06:30',
-        duration: '9h 00m',
-      },
-    ],
-  },
-];
+function disasterTitle(type: string): string {
+  switch (type) {
+    case 'FLOOD': return 'Flood Warning';
+    case 'DROUGHT': return 'Drought Alert';
+    case 'STORM': return 'Severe Storm';
+    case 'LANDSLIDE': return 'Landslide Risk';
+    default: return `${type} Alert`;
+  }
+}
+
+function disasterDescription(type: string, riskScore: number): string {
+  const pct = Math.round(riskScore * 100);
+  switch (type) {
+    case 'FLOOD': return `Flood risk detected at ${pct}% probability. Monitor water levels and avoid low-lying areas.`;
+    case 'DROUGHT': return `Drought conditions detected at ${pct}% probability. Water conservation measures advised.`;
+    case 'STORM': return `Storm risk detected at ${pct}% probability. Secure loose objects and stay indoors.`;
+    case 'LANDSLIDE': return `Landslide risk detected at ${pct}% probability. Avoid steep slopes and unstable terrain.`;
+    default: return `Disaster risk detected at ${pct}% probability for this location.`;
+  }
+}
+
+function relativeTimeStr(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function resolvedTimeStr(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `Resolved: ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+}
+
+function sectionTitle(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const alertDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.floor((today.getTime() - alertDay.getTime()) / 86400000);
+
+  if (diffDays === 0) return '';
+  if (diffDays === 1) return 'YESTERDAY';
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }).toUpperCase();
+}
 
 // ─── Severity config ──────────────────────────────────────────────────────────
 const SEV = {
@@ -168,6 +112,12 @@ const SEV = {
     badgeText:'#CA8A04',
     label:    'ADVISORY',
   },
+  normal: {
+    stripe:   '#22C55E',
+    badgeBg:  'rgba(34,197,94,0.10)',
+    badgeText:'#16A34A',
+    label:    'NORMAL',
+  },
 } as const;
 
 // ─── Tab switcher ─────────────────────────────────────────────────────────────
@@ -175,7 +125,7 @@ const TABS = ['Recent', 'History'] as const;
 type Tab = (typeof TABS)[number];
 type SortBy = 'time' | 'severity';
 
-const SORDER: Record<Severity, number> = { danger: 0, watch: 1, advisory: 2 };
+const SORDER: Record<Severity, number> = { danger: 0, watch: 1, advisory: 2, normal: 3 };
 function sortedSections(secs: AlertSection[], mode: SortBy): AlertSection[] {
   if (mode === 'time') return secs;
   return secs.map((sec) => ({
@@ -325,23 +275,153 @@ export default function AlertsScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('Recent');
   const [sortBy, setSortBy] = useState<SortBy>('time');
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [recentSections, setRecentSections] = useState<AlertSection[]>([]);
+  const [historySections, setHistorySections] = useState<AlertSection[]>([]);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
   }, []);
 
+  // ── Fetch alerts from Supabase ─────────────────────────────────────────────
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const session = await getSessionSafe();
+      if (!session?.user) {
+        setLoading(false);
+        return;
+      }
+
+      const userId = session.user.id;
+
+      // Fetch alerts, saved locations, and last prediction run in parallel
+      const [alertsRes, locationsRes, runsRes] = await Promise.all([
+        supabase
+          .from('disaster_alerts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('alert_sent_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('saved_locations')
+          .select('id, city, country')
+          .eq('user_id', userId),
+        supabase
+          .from('prediction_runs')
+          .select('*')
+          .order('run_timestamp', { ascending: false })
+          .limit(1),
+      ]);
+
+      const alerts = alertsRes.data ?? [];
+      const locations = locationsRes.data ?? [];
+      const lastRun = runsRes.data?.[0] ?? null;
+
+      // Build location lookup map
+      const locMap: Record<string, { city: string; country: string }> = {};
+      for (const loc of locations) {
+        locMap[loc.id] = { city: loc.city, country: loc.country };
+      }
+
+      // Build set of location IDs that have disaster alerts
+      const alertedLocationIds = new Set(alerts.map((a) => a.location_id));
+
+      // Split into recent (<24h) and history (>=24h)
+      const now = Date.now();
+      const dayAgo = now - 24 * 60 * 60 * 1000;
+
+      const recentAlerts: Alert[] = [];
+      const historyAlerts: Alert[] = [];
+
+      for (const a of alerts) {
+        const sentAt = new Date(a.alert_sent_at).getTime();
+        const loc = locMap[a.location_id];
+        const locationStr = loc ? `${loc.city}, ${loc.country}` : 'Unknown location';
+
+        const alert: Alert = {
+          id: a.id,
+          severity: riskToSeverity(Number(a.risk_score)),
+          title: disasterTitle(a.disaster_type),
+          location: locationStr,
+          description: disasterDescription(a.disaster_type, Number(a.risk_score)),
+        };
+
+        if (sentAt >= dayAgo) {
+          alert.relativeTime = relativeTimeStr(a.alert_sent_at);
+          recentAlerts.push(alert);
+        } else {
+          alert.resolvedTime = resolvedTimeStr(a.alert_sent_at);
+          historyAlerts.push(alert);
+        }
+      }
+
+      // Add "Normal" cards for locations without disaster alerts (if prediction was run)
+      if (lastRun) {
+        for (const loc of locations) {
+          if (!alertedLocationIds.has(loc.id)) {
+            const locationStr = `${loc.city}, ${loc.country}`;
+            const normalAlert: Alert = {
+              id: `normal_${loc.id}`,
+              severity: 'normal',
+              title: 'All Clear',
+              location: locationStr,
+              description: 'No disaster risk detected. Last check passed successfully.',
+              relativeTime: relativeTimeStr(lastRun.run_timestamp),
+            };
+            recentAlerts.push(normalAlert);
+          }
+        }
+      }
+
+      // Group recent into sections (first few + "EARLIER TODAY")
+      const recentSecs: AlertSection[] = [];
+      if (recentAlerts.length > 0) {
+        // Sort: dangers first, then watch, advisory, normal last
+        recentAlerts.sort((a, b) => SORDER[a.severity] - SORDER[b.severity]);
+        const top = recentAlerts.slice(0, 3);
+        const earlier = recentAlerts.slice(3);
+        recentSecs.push({ title: '', data: top });
+        if (earlier.length > 0) {
+          recentSecs.push({ title: 'EARLIER TODAY', data: earlier });
+        }
+      }
+
+      // Group history by date
+      const historyGroups: Record<string, Alert[]> = {};
+      for (const a of historyAlerts) {
+        const alert = alerts.find((x) => x.id === a.id);
+        if (!alert) continue;
+        const key = sectionTitle(alert.alert_sent_at);
+        if (!historyGroups[key]) historyGroups[key] = [];
+        historyGroups[key].push(a);
+      }
+      const historySecs: AlertSection[] = Object.entries(historyGroups).map(([title, data]) => ({ title, data }));
+
+      setRecentSections(recentSecs);
+      setHistorySections(historySecs);
+    } catch (err) {
+      console.error('[AlertsScreen] fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts]);
+
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
   }, []);
 
   const sections = sortedSections(
-    activeTab === 'Recent' ? RECENT_SECTIONS : HISTORY_SECTIONS,
+    activeTab === 'Recent' ? recentSections : historySections,
     sortBy,
   );
 
-  const activeCount  = RECENT_SECTIONS.reduce((n, s) => n + s.data.length, 0);
-  const dangerCount  = RECENT_SECTIONS.flatMap((s) => s.data).filter((a) => a.severity === 'danger').length;
+  const activeCount  = recentSections.reduce((n, s) => n + s.data.length, 0);
+  const dangerCount  = recentSections.flatMap((s) => s.data).filter((a) => a.severity === 'danger').length;
 
   return (
     <View style={[s.root, { backgroundColor: isDark ? '#0D1117' : '#F8FAFC' }]}>
@@ -435,28 +515,45 @@ export default function AlertsScreen() {
           </View>
 
           {/* ── Alert list ──────────────────────────────────────── */}
-          <SectionList
-            key={activeTab}
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={[s.listContent, { paddingBottom: tabBarHeight + 24 }]}
-            showsVerticalScrollIndicator={false}
-            stickySectionHeadersEnabled={false}
-            renderSectionHeader={({ section }) => (
-              <SectionHeader title={section.title} colors={colors} />
-            )}
-            renderItem={({ item, index }) => (
-              <AlertCard
-                alert={item}
-                index={index}
-                isHistory={activeTab === 'History'}
-                isDark={isDark}
-                colors={colors}
-              />
-            )}
-            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-            SectionSeparatorComponent={() => <View style={{ height: 4 }} />}
-          />
+          {loading ? (
+            <View style={s.emptyContainer}>
+              <ActivityIndicator size="large" color="#3B82F6" />
+              <Text style={[s.emptyText, { color: colors.textMuted }]}>Loading alerts...</Text>
+            </View>
+          ) : sections.length === 0 ? (
+            <View style={s.emptyContainer}>
+              <Ionicons name="shield-checkmark-outline" size={48} color={colors.textMuted} />
+              <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>No alerts</Text>
+              <Text style={[s.emptyText, { color: colors.textMuted }]}>
+                Your saved locations are safe. Alerts will appear here when the daily prediction detects a risk.
+              </Text>
+            </View>
+          ) : (
+            <SectionList
+              key={activeTab}
+              sections={sections}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={[s.listContent, { paddingBottom: tabBarHeight + 24 }]}
+              showsVerticalScrollIndicator={false}
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({ section }) => (
+                <SectionHeader title={section.title} colors={colors} />
+              )}
+              renderItem={({ item, index }) => (
+                <AlertCard
+                  alert={item}
+                  index={index}
+                  isHistory={activeTab === 'History'}
+                  isDark={isDark}
+                  colors={colors}
+                />
+              )}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              SectionSeparatorComponent={() => <View style={{ height: 4 }} />}
+              onRefresh={fetchAlerts}
+              refreshing={loading}
+            />
+          )}
 
         </Animated.View>
       </SafeAreaView>
@@ -603,4 +700,9 @@ const s = StyleSheet.create({
   // Duration (history)
   durationRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
   durationText: { fontSize: 12, fontWeight: '500' },
+
+  // Empty / loading state
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10, paddingTop: 80 },
+  emptyTitle: { fontSize: 18, fontWeight: '700' },
+  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 });
