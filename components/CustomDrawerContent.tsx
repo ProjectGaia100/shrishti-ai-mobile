@@ -29,7 +29,7 @@ interface MenuItem {
 const MENU_ITEMS: MenuItem[] = [
   { label: 'Home', icon: 'home', iconSet: 'ion', route: '/(drawer)' },
   { label: 'Add Locations', icon: 'location', iconSet: 'ion', route: '/(drawer)/locations' },
-  { label: 'Alerts', icon: 'warning', iconSet: 'ion', route: '/(drawer)/alerts', badge: '3' },
+  { label: 'Alerts', icon: 'warning', iconSet: 'ion', route: '/(tabs)/alerts', badge: '3' },
   { label: 'Premium', icon: 'crown', iconSet: 'mci', route: '/(drawer)/premium' },
   { label: 'Settings', icon: 'settings-sharp', iconSet: 'ion', route: '/(drawer)/settings' },
 ];
