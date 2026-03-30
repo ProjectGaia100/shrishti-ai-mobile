@@ -36,6 +36,17 @@ interface AlertSection {
   data: Alert[];
 }
 
+interface PredictionRunRow {
+  id: string;
+  run_timestamp: string;
+  total_locations: number;
+  predictions_made: number;
+  alerts_created: number;
+  errors_count: number;
+  duration_seconds: number | null;
+  status: 'running' | 'completed' | 'failed';
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function riskToSeverity(riskScore: number): Severity {
   if (riskScore >= 0.8) return 'danger';
@@ -124,6 +135,8 @@ const SEV = {
 const TABS = ['Recent', 'History'] as const;
 type Tab = (typeof TABS)[number];
 type SortBy = 'time' | 'severity';
+const MAX_ALERT_ROWS = 500;
+const MAX_PREDICTION_HISTORY_ROWS = 500;
 
 const SORDER: Record<Severity, number> = { danger: 0, watch: 1, advisory: 2, normal: 3 };
 function sortedSections(secs: AlertSection[], mode: SortBy): AlertSection[] {
@@ -286,6 +299,7 @@ export default function AlertsScreen() {
 
   // ── Fetch alerts from Supabase ─────────────────────────────────────────────
   const fetchAlerts = useCallback(async () => {
+    setLoading(true);
     try {
       const session = await getSessionSafe();
       if (!session?.user) {
@@ -295,28 +309,29 @@ export default function AlertsScreen() {
 
       const userId = session.user.id;
 
-      // Fetch alerts, saved locations, and last prediction run in parallel
       const [alertsRes, locationsRes, runsRes] = await Promise.all([
         supabase
           .from('disaster_alerts')
-          .select('*')
+          .select('id, location_id, disaster_type, risk_score, alert_sent_at')
           .eq('user_id', userId)
           .order('alert_sent_at', { ascending: false })
-          .limit(50),
+          .limit(MAX_ALERT_ROWS),
         supabase
           .from('saved_locations')
           .select('id, city, country')
           .eq('user_id', userId),
         supabase
           .from('prediction_runs')
-          .select('*')
+          .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
+          .eq('user_id', userId)
           .order('run_timestamp', { ascending: false })
-          .limit(1),
+          .limit(MAX_PREDICTION_HISTORY_ROWS),
       ]);
 
       const alerts = alertsRes.data ?? [];
       const locations = locationsRes.data ?? [];
-      const lastRun = runsRes.data?.[0] ?? null;
+      const runHistory = (runsRes.data ?? []) as PredictionRunRow[];
+      const lastRun = runHistory.find((run) => run.status === 'completed') ?? null;
 
       // Build location lookup map
       const locMap: Record<string, { city: string; country: string }> = {};
@@ -332,8 +347,6 @@ export default function AlertsScreen() {
       const dayAgo = now - 24 * 60 * 60 * 1000;
 
       const recentAlerts: Alert[] = [];
-      const historyAlerts: Alert[] = [];
-
       for (const a of alerts) {
         const sentAt = new Date(a.alert_sent_at).getTime();
         const loc = locMap[a.location_id];
@@ -350,9 +363,6 @@ export default function AlertsScreen() {
         if (sentAt >= dayAgo) {
           alert.relativeTime = relativeTimeStr(a.alert_sent_at);
           recentAlerts.push(alert);
-        } else {
-          alert.resolvedTime = resolvedTimeStr(a.alert_sent_at);
-          historyAlerts.push(alert);
         }
       }
 
@@ -387,14 +397,37 @@ export default function AlertsScreen() {
         }
       }
 
-      // Group history by date
+      // Group prediction run history by date
       const historyGroups: Record<string, Alert[]> = {};
-      for (const a of historyAlerts) {
-        const alert = alerts.find((x) => x.id === a.id);
-        if (!alert) continue;
-        const key = sectionTitle(alert.alert_sent_at);
+      for (const run of runHistory) {
+        const severity: Severity =
+          run.status === 'failed'
+            ? 'danger'
+            : run.alerts_created > 0
+              ? 'watch'
+              : run.errors_count > 0
+                ? 'advisory'
+                : 'normal';
+
+        const historyItem: Alert = {
+          id: `run_${run.id}`,
+          severity,
+          title:
+            run.alerts_created > 0
+              ? `${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'} generated`
+              : 'Prediction cycle completed',
+          location: `${run.predictions_made}/${run.total_locations} locations analyzed`,
+          description:
+            run.errors_count > 0
+              ? `Cycle completed with ${run.errors_count} error${run.errors_count === 1 ? '' : 's'} and ${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'}.`
+              : `Cycle completed successfully with ${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'} generated.`,
+          resolvedTime: resolvedTimeStr(run.run_timestamp),
+          duration: run.duration_seconds != null ? `${run.duration_seconds}s` : undefined,
+        };
+
+        const key = sectionTitle(run.run_timestamp);
         if (!historyGroups[key]) historyGroups[key] = [];
-        historyGroups[key].push(a);
+        historyGroups[key].push(historyItem);
       }
       const historySecs: AlertSection[] = Object.entries(historyGroups).map(([title, data]) => ({ title, data }));
 
