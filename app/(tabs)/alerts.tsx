@@ -291,6 +291,8 @@ export default function AlertsScreen() {
   const [loading, setLoading] = useState(true);
   const [recentSections, setRecentSections] = useState<AlertSection[]>([]);
   const [historySections, setHistorySections] = useState<AlertSection[]>([]);
+  const [latestRunDiagnostic, setLatestRunDiagnostic] = useState<PredictionRunRow | null>(null);
+  const [runHistorySource, setRunHistorySource] = useState<'scoped' | 'global-fallback' | 'none'>('none');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -309,7 +311,7 @@ export default function AlertsScreen() {
 
       const userId = session.user.id;
 
-      const [alertsRes, locationsRes, runsRes] = await Promise.all([
+      const [alertsRes, locationsRes] = await Promise.all([
         supabase
           .from('disaster_alerts')
           .select('id, location_id, disaster_type, risk_score, alert_sent_at')
@@ -320,17 +322,44 @@ export default function AlertsScreen() {
           .from('saved_locations')
           .select('id, city, country')
           .eq('user_id', userId),
-        supabase
-          .from('prediction_runs')
-          .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
-          .eq('user_id', userId)
-          .order('run_timestamp', { ascending: false })
-          .limit(MAX_PREDICTION_HISTORY_ROWS),
       ]);
 
       const alerts = alertsRes.data ?? [];
       const locations = locationsRes.data ?? [];
-      const runHistory = (runsRes.data ?? []) as PredictionRunRow[];
+      let runHistory: PredictionRunRow[] = [];
+
+      try {
+        const scopedRunsRes = await supabase
+          .from('prediction_runs')
+          .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
+          .eq('user_id', userId)
+          .order('run_timestamp', { ascending: false })
+          .limit(MAX_PREDICTION_HISTORY_ROWS);
+
+        if (scopedRunsRes.error) throw scopedRunsRes.error;
+        runHistory = (scopedRunsRes.data ?? []) as PredictionRunRow[];
+        setRunHistorySource('scoped');
+      } catch (runErr) {
+        const message = String((runErr as any)?.message ?? runErr ?? '').toLowerCase();
+
+        // Backward compatibility for old schemas where prediction_runs.user_id
+        // does not exist yet. This avoids blank screens during migration.
+        if (message.includes('user_id') && message.includes('does not exist')) {
+          const globalRunsRes = await supabase
+            .from('prediction_runs')
+            .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
+            .order('run_timestamp', { ascending: false })
+            .limit(MAX_PREDICTION_HISTORY_ROWS);
+
+          runHistory = (globalRunsRes.data ?? []) as PredictionRunRow[];
+          setRunHistorySource('global-fallback');
+        } else {
+          console.error('[AlertsScreen] prediction_runs fetch error:', runErr);
+          setRunHistorySource('none');
+        }
+      }
+
+      setLatestRunDiagnostic(runHistory[0] ?? null);
       const lastRun = runHistory.find((run) => run.status === 'completed') ?? null;
 
       // Build location lookup map
@@ -560,6 +589,39 @@ export default function AlertsScreen() {
               <Text style={[s.emptyText, { color: colors.textMuted }]}>
                 Your saved locations are safe. Alerts will appear here when the daily prediction detects a risk.
               </Text>
+
+              {latestRunDiagnostic && (
+                <View
+                  style={[
+                    s.diagCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(30,41,59,0.45)' : 'rgba(255,255,255,0.92)',
+                      borderColor: isDark ? 'rgba(148,163,184,0.25)' : 'rgba(15,23,42,0.12)',
+                    },
+                  ]}
+                >
+                  <Text style={[s.diagTitle, { color: colors.textPrimary }]}>Last scheduler run</Text>
+                  <Text style={[s.diagSub, { color: colors.textMuted }]}>{resolvedTimeStr(latestRunDiagnostic.run_timestamp)}</Text>
+
+                  <Text style={[s.diagLine, { color: colors.textPrimary }]}>Status: {latestRunDiagnostic.status}</Text>
+                  <Text style={[s.diagLine, { color: colors.textPrimary }]}>Predictions: {latestRunDiagnostic.predictions_made}</Text>
+                  <Text style={[s.diagLine, { color: colors.textPrimary }]}>Errors: {latestRunDiagnostic.errors_count}</Text>
+                  <Text style={[s.diagLine, { color: colors.textPrimary }]}>Alerts generated: {latestRunDiagnostic.alerts_created}</Text>
+
+                  {latestRunDiagnostic.predictions_made > 0 &&
+                    latestRunDiagnostic.errors_count >= latestRunDiagnostic.predictions_made && (
+                      <Text style={s.diagWarning}>
+                        Prediction failed for all locations. Backend inference is likely failing (for example HTTP 502).
+                      </Text>
+                  )}
+
+                  {runHistorySource === 'global-fallback' && (
+                    <Text style={s.diagInfo}>
+                      Using global prediction history fallback. Apply DB migration to add prediction_runs.user_id for account-scoped history.
+                    </Text>
+                  )}
+                </View>
+              )}
             </View>
           ) : (
             <SectionList
@@ -738,4 +800,18 @@ const s = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10, paddingTop: 80 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  diagCard: {
+    marginTop: 14,
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  diagTitle: { fontSize: 13, fontWeight: '700' },
+  diagSub: { fontSize: 12, marginBottom: 2 },
+  diagLine: { fontSize: 12, fontWeight: '500' },
+  diagWarning: { fontSize: 12, color: '#F97316', marginTop: 4, lineHeight: 17 },
+  diagInfo: { fontSize: 11, color: '#60A5FA', marginTop: 4, lineHeight: 16 },
 });
