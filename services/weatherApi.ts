@@ -79,6 +79,16 @@ interface OpenWeatherGeoResult {
   lon: number;
 }
 
+interface OpenWeatherAirPollutionItem {
+  main: {
+    aqi: number;
+  };
+}
+
+interface OpenWeatherAirPollutionResponse {
+  list: OpenWeatherAirPollutionItem[];
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export interface CurrentWeather {
   temp: number;
@@ -94,6 +104,7 @@ export interface CurrentWeather {
   country: string;
   sunrise: number;
   sunset: number;
+  aqi?: number;
   uvi?: number;
   dt: number;
   timezone: number;
@@ -151,6 +162,19 @@ export async function fetchWeatherByCoords(
       ),
     ]);
 
+    // AQI uses a separate endpoint; failures here should not block weather data.
+    let aqi: number | undefined;
+    try {
+      const airRes = await retryWithBackoff(() =>
+        axios.get<OpenWeatherAirPollutionResponse>(`${BASE}/air_pollution`, {
+          params: { lat, lon, appid: API_KEY },
+        })
+      );
+      aqi = airRes.data?.list?.[0]?.main?.aqi;
+    } catch {
+      aqi = undefined;
+    }
+
     const c = currentRes.data;
     const f = forecastRes.data;
 
@@ -180,6 +204,7 @@ export async function fetchWeatherByCoords(
       country: c.sys.country,
       sunrise: c.sys.sunrise,
       sunset: c.sys.sunset,
+      aqi,
       dt: c.dt,
       timezone: c.timezone,
     };

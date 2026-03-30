@@ -55,38 +55,70 @@ export default function WeatherDetailsGrid({ weather, settings }: Props) {
     };
   }, []);
 
-  // Format sunrise/sunset times with date awareness
-  const formatTime = (unix: number | undefined, tz: number): string => {
-    if (!unix) return '--:--';
-    const date = new Date((unix + tz) * 1000);
-    const now = new Date();
-    const h = date.getUTCHours();
-    const m = date.getUTCMinutes().toString().padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const timeStr = `${h % 12 || 12}:${m} ${ampm}`;
-    
-    // Check if date is different from today
-    const dateDay = date.getUTCDate();
-    const todayDay = now.getUTCDate();
-    
-    if (dateDay !== todayDay) {
-      // Add "Tomorrow" or date indicator if different day
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      if (dateDay === tomorrow.getDate()) {
-        return `${timeStr} (Tomorrow)`;
-      }
+  const getAqiLabel = (aqi: number | undefined): string => {
+    switch (aqi) {
+      case 1:
+        return 'Good';
+      case 2:
+        return 'Fair';
+      case 3:
+        return 'Moderate';
+      case 4:
+        return 'Poor';
+      case 5:
+        return 'Very Poor';
+      default:
+        return '--';
     }
-    
-    return timeStr;
   };
+
+  const getAqiSubtext = (aqi: number | undefined): string => {
+    switch (aqi) {
+      case 1:
+        return 'Low pollution';
+      case 2:
+        return 'Acceptable air';
+      case 3:
+        return 'Sensitive caution';
+      case 4:
+        return 'Unhealthy air';
+      case 5:
+        return 'Very unhealthy air';
+      default:
+        return 'Air quality unavailable';
+    }
+  };
+
+  const getAqiColor = (aqi: number | undefined): string => {
+    switch (aqi) {
+      case 1:
+        return '#4ADE80';
+      case 2:
+        return '#FACC15';
+      case 3:
+        return '#FB923C';
+      case 4:
+        return '#F87171';
+      case 5:
+        return '#B91C1C';
+      default:
+        return 'rgba(255,255,255,0.25)';
+    }
+  };
+
+  const getAqiPercent = (aqi: number | undefined): number => {
+    if (!aqi || aqi < 1 || aqi > 5) return 0;
+    return ((aqi - 1) / 4) * 100;
+  };
+
+  const aqiSeverityColors = ['#4ADE80', '#FACC15', '#FB923C', '#F87171', '#B91C1C'];
 
   const details: DetailItem[] = [
     {
-      icon: <Feather name="sunrise" size={22} color={Colors.accentOrange} />,
-      title: 'SUNRISE',
-      value: formatTime(weather.sunrise, weather.timezone ?? 0),
-      subtitle: `Sunset ${formatTime(weather.sunset, weather.timezone ?? 0)}`,
+      icon: <MaterialCommunityIcons name="molecule-co2" size={22} color={Colors.accentOrange} />,
+      title: 'AIR QUALITY',
+      value: getAqiLabel(weather.aqi),
+      subtitle: getAqiSubtext(weather.aqi),
     },
     {
       icon: <Feather name="wind" size={22} color={Colors.accentBlue} />,
@@ -131,10 +163,58 @@ export default function WeatherDetailsGrid({ weather, settings }: Props) {
         {details.map((item, idx) => (
           <View key={idx} style={styles.cardWrapper}>
             <View style={styles.card}>
-              <View style={styles.cardIcon}>{item.icon}</View>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardValue}>{item.value}</Text>
-              <Text style={styles.cardSub}>{item.subtitle}</Text>
+              {item.title === 'AIR QUALITY' ? (
+                <>
+                  <View style={styles.cardIcon}>{item.icon}</View>
+                  <Text style={styles.cardTitle}>{item.title}</Text>
+                  <View style={styles.aqiContentRow}>
+                    <View style={styles.aqiTextWrap}>
+                      <Text style={[styles.cardValue, styles.aqiSeverityText, { color: getAqiColor(weather.aqi) }]}>{item.value}</Text>
+                      <Text style={styles.cardSub}>{item.subtitle}</Text>
+                      <View style={styles.aqiBarWrap}>
+                        <View style={styles.aqiBarTrack}>
+                          <View style={styles.aqiSeverityRow}>
+                            {aqiSeverityColors.map((color, idx) => (
+                              <View
+                                key={idx}
+                                style={[
+                                  styles.aqiSeveritySegment,
+                                  {
+                                    backgroundColor: color,
+                                    marginRight: idx === aqiSeverityColors.length - 1 ? 0 : 3,
+                                  },
+                                ]}
+                              />
+                            ))}
+                          </View>
+                          {weather.aqi ? (
+                            <View
+                              style={[
+                                styles.aqiThumb,
+                                {
+                                  left: `${getAqiPercent(weather.aqi)}%`,
+                                  backgroundColor: getAqiColor(weather.aqi),
+                                },
+                              ]}
+                            />
+                          ) : null}
+                        </View>
+                        <View style={styles.aqiBarLabels}>
+                          <Text style={styles.aqiBarLabelText}>Low</Text>
+                          <Text style={styles.aqiBarLabelText}>High</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.cardIcon}>{item.icon}</View>
+                  <Text style={styles.cardTitle}>{item.title}</Text>
+                  <Text style={styles.cardValue}>{item.value}</Text>
+                  <Text style={styles.cardSub}>{item.subtitle}</Text>
+                </>
+              )}
             </View>
           </View>
         ))}
@@ -186,5 +266,63 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  aqiContentRow: {
+    width: '100%',
+    marginTop: 4,
+  },
+  aqiTextWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  aqiBarWrap: {
+    marginTop: 10,
+  },
+  aqiBarTrack: {
+    position: 'relative',
+    height: 14,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'visible',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  aqiSeverityRow: {
+    flexDirection: 'row',
+    height: 10,
+    borderRadius: 9999,
+    overflow: 'hidden',
+  },
+  aqiSeveritySegment: {
+    flex: 1,
+    borderRadius: 9999,
+  },
+  aqiThumb: {
+    position: 'absolute',
+    top: -5,
+    marginLeft: -9,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  aqiBarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  aqiBarLabelText: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
+  },
+  aqiSeverityText: {
+    fontWeight: '600',
   },
 });
