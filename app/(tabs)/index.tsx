@@ -27,6 +27,7 @@ import { useTheme } from '../../context/ThemeContext';
 import CurrentWeatherCard from '../../components/CurrentWeatherCard';
 import HourlyForecast from '../../components/HourlyForecast';
 import WeeklyForecast from '../../components/WeeklyForecast';
+import SunPathCard from '../../components/SunPathCard';
 import WeatherDetailsGrid from '../../components/WeatherDetailsGrid';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import ErrorState from '../../components/ErrorState';
@@ -239,6 +240,7 @@ export default function HomeScreen() {
               <View style={{ height: 20 }} />
               <HourlyForecast data={data.hourly} timezone={data.current.timezone} settings={settings} />
               <WeeklyForecast data={data.daily} settings={settings} />
+              <SunPathCard weather={data.current} />
               <WeatherDetailsGrid weather={data.current} settings={settings} />
             </>
           )}
