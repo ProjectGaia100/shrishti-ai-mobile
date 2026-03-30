@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, Session } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 // ─── DB Row Types ─────────────────────────────────────────────────────────────
 export interface DbProfile {
@@ -53,6 +54,9 @@ async function clearLocalAuth() {
   }
 }
 
+type LockAcquireFn = () => Promise<any>;
+const webNoopAuthLock = async (_name: string, _acquireTimeout: number, fn: LockAcquireFn) => fn();
+
 // ─── Client ───────────────────────────────────────────────────────────────────
 export const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_URL!,
@@ -63,6 +67,12 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      ...(Platform.OS === 'web'
+        ? {
+            lock: webNoopAuthLock,
+            multiTab: false,
+          }
+        : {}),
     },
   },
 );
