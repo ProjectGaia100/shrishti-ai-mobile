@@ -11,6 +11,7 @@ interface Props {
 }
 
 const UPDATE_INTERVAL_MS = 60 * 1000;
+const ORBIT_MAX_HEIGHT = 52;
 
 function formatLocalTime(unix: number | undefined, timezone: number): string {
   if (!unix) return '--:--';
@@ -76,8 +77,8 @@ export default function SunPathCard({ weather }: Props) {
     const clamped = Math.max(0, Math.min(1, raw));
     const day = raw >= 0 && raw <= 1;
 
-    const arcHeight = Math.sin(Math.PI * clamped) * 44;
-    const height = 12 + arcHeight;
+    const arcHeight = Math.sin(Math.PI * clamped) * ORBIT_MAX_HEIGHT;
+    const height = Math.max(0, arcHeight);
 
     return {
       isDaytime: day,
@@ -88,7 +89,7 @@ export default function SunPathCard({ weather }: Props) {
 
   const sunriseText = formatLocalTime(weather.sunrise, weather.timezone ?? 0);
   const sunsetText = formatLocalTime(weather.sunset, weather.timezone ?? 0);
-  const skyColors = isDaytime
+  const skyColors: [string, string, string] = isDaytime
     ? ['rgba(191,219,254,0.18)', 'rgba(125,211,252,0.12)', 'rgba(255,255,255,0.02)']
     : ['rgba(30,41,59,0.26)', 'rgba(15,23,42,0.22)', 'rgba(2,6,23,0.08)'];
 
@@ -123,17 +124,22 @@ export default function SunPathCard({ weather }: Props) {
         <View style={styles.sunScene}>
           <LinearGradient colors={skyColors} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.skyFill} />
 
-          {isDaytime ? (
-            <View
-              style={[
-                styles.sun,
-                {
-                  left: `${sunProgress * 100}%`,
-                  bottom: sunHeightPx,
-                },
-              ]}
-            />
-          ) : null}
+          <View style={styles.orbitLayer} pointerEvents="none">
+            <View style={styles.orbitArc} />
+            <View style={styles.horizonLine} />
+
+            {isDaytime ? (
+              <View
+                style={[
+                  styles.sun,
+                  {
+                    left: `${sunProgress * 100}%`,
+                    bottom: sunHeightPx,
+                  },
+                ]}
+              />
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.timeRow}>
@@ -213,6 +219,35 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
+  },
+  orbitLayer: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 8,
+    height: 62,
+  },
+  orbitArc: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: ORBIT_MAX_HEIGHT,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 0,
+    borderTopLeftRadius: 200,
+    borderTopRightRadius: 200,
+    borderColor: 'rgba(255,255,255,0.32)',
+  },
+  horizonLine: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
   sun: {
     position: 'absolute',
