@@ -75,6 +75,19 @@ function disasterDescription(type: string, riskScore: number): string {
   }
 }
 
+function disasterClearDescription(type: string): string {
+  switch (type) {
+    case 'FLOOD': return 'No flood risk detected. Water levels are within safe limits.';
+    case 'DROUGHT': return 'No drought conditions detected. Moisture levels are normal.';
+    case 'STORM': return 'No storm risk detected. Weather conditions are stable.';
+    case 'LANDSLIDE': return 'No landslide risk detected. Terrain stability is normal.';
+    default: return 'No risk detected for this disaster type.';
+  }
+}
+
+const DISASTER_TYPES = ['FLOOD', 'STORM', 'DROUGHT', 'LANDSLIDE'] as const;
+
+
 function relativeTimeStr(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -302,10 +315,13 @@ export default function AlertsScreen() {
   // ── Fetch alerts from Supabase ─────────────────────────────────────────────
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
+
+    // Safety net: stop the spinner even if a Supabase query stalls silently.
+    const timeoutId = setTimeout(() => setLoading(false), 12_000);
+
     try {
       const session = await getSessionSafe();
       if (!session?.user) {
-        setLoading(false);
         return;
       }
 
@@ -395,20 +411,33 @@ export default function AlertsScreen() {
         }
       }
 
-      // Add "Normal" cards for locations without disaster alerts (if prediction was run)
-      if (lastRun) {
-        for (const loc of locations) {
-          if (!alertedLocationIds.has(loc.id)) {
-            const locationStr = `${loc.city}, ${loc.country}`;
-            const normalAlert: Alert = {
-              id: `normal_${loc.id}`,
+      // Build per-location, per-type alert set so we know which types are
+      // already covered by a real disaster_alert row.
+      const alertedByLocAndType: Map<string, Set<string>> = new Map();
+      for (const a of alerts) {
+        if (!alertedByLocAndType.has(a.location_id)) {
+          alertedByLocAndType.set(a.location_id, new Set());
+        }
+        alertedByLocAndType.get(a.location_id)!.add(a.disaster_type);
+      }
+
+      // For every saved location, show one card per disaster type.
+      // Types that already have a real alert are skipped here (shown above).
+      // Types that are clear get a Normal card so the user sees every assessment.
+      const checkTime = lastRun ? relativeTimeStr(lastRun.run_timestamp) : 'Checked today';
+      for (const loc of locations) {
+        const alertedTypes = alertedByLocAndType.get(loc.id) ?? new Set<string>();
+        const locationStr = `${loc.city}, ${loc.country}`;
+        for (const disasterType of DISASTER_TYPES) {
+          if (!alertedTypes.has(disasterType)) {
+            recentAlerts.push({
+              id: `normal_${loc.id}_${disasterType}`,
               severity: 'normal',
-              title: 'All Clear',
+              title: `${disasterTitle(disasterType)} — Clear`,
               location: locationStr,
-              description: 'No disaster risk detected. Last check passed successfully.',
-              relativeTime: relativeTimeStr(lastRun.run_timestamp),
-            };
-            recentAlerts.push(normalAlert);
+              description: disasterClearDescription(disasterType),
+              relativeTime: checkTime,
+            });
           }
         }
       }
@@ -465,6 +494,7 @@ export default function AlertsScreen() {
     } catch (err) {
       console.error('[AlertsScreen] fetch error:', err);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, []);
