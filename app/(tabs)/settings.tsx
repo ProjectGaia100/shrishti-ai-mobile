@@ -123,18 +123,22 @@ export default function SettingsScreen() {
     }).start();
   }, []);
 
-  const handleLogout = () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/login');
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    // Alert.alert is a no-op on Expo web — use window.confirm there instead.
+    const confirmed =
+      Platform.OS === 'web'
+        ? window.confirm('Are you sure you want to log out?')
+        : await new Promise<boolean>((resolve) =>
+            Alert.alert('Log Out', 'Are you sure you want to log out?', [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Log Out', style: 'destructive', onPress: () => resolve(true) },
+            ])
+          );
+
+    if (confirmed) {
+      await logout();
+      router.replace('/login');
+    }
   };
 
   return (

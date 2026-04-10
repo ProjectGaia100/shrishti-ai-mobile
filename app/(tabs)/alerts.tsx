@@ -47,6 +47,16 @@ interface PredictionRunRow {
   status: 'running' | 'completed' | 'failed';
 }
 
+interface LocationPredictionResult {
+  id: string;
+  prediction_run_id: string | null;
+  location_id: string;
+  overall_status: 'Normal' | 'Disaster';
+  disaster_types: string[];
+  risk_score: number;
+  run_timestamp: string;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function riskToSeverity(riskScore: number): Severity {
   if (riskScore >= 0.8) return 'danger';
@@ -75,18 +85,16 @@ function disasterDescription(type: string, riskScore: number): string {
   }
 }
 
-function disasterClearDescription(type: string): string {
-  switch (type) {
-    case 'FLOOD': return 'No flood risk detected. Water levels are within safe limits.';
-    case 'DROUGHT': return 'No drought conditions detected. Moisture levels are normal.';
-    case 'STORM': return 'No storm risk detected. Weather conditions are stable.';
-    case 'LANDSLIDE': return 'No landslide risk detected. Terrain stability is normal.';
-    default: return 'No risk detected for this disaster type.';
-  }
+// Returns a compact summary line for a per-location "All Clear" card,
+// e.g. "Flood ✓  Storm ✓  Drought ✓  Landslide ✓"
+function buildAllClearDescription(alertedTypes: Set<string>): string {
+  return DISASTER_TYPES.map((t) => {
+    const label = t.charAt(0) + t.slice(1).toLowerCase();
+    return alertedTypes.has(t) ? `${label} ⚠️` : `${label} ✓`;
+  }).join('   ');
 }
 
 const DISASTER_TYPES = ['FLOOD', 'STORM', 'DROUGHT', 'LANDSLIDE'] as const;
-
 
 function relativeTimeStr(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -327,168 +335,177 @@ export default function AlertsScreen() {
 
       const userId = session.user.id;
 
-      const [alertsRes, locationsRes] = await Promise.all([
-        supabase
-          .from('disaster_alerts')
-          .select('id, location_id, disaster_type, risk_score, alert_sent_at')
-          .eq('user_id', userId)
-          .order('alert_sent_at', { ascending: false })
-          .limit(MAX_ALERT_ROWS),
+      const [locationsRes, predResultsRes] = await Promise.all([
         supabase
           .from('saved_locations')
           .select('id, city, country')
           .eq('user_id', userId),
-      ]);
-
-      const alerts = alertsRes.data ?? [];
-      const locations = locationsRes.data ?? [];
-      let runHistory: PredictionRunRow[] = [];
-
-      try {
-        const scopedRunsRes = await supabase
-          .from('prediction_runs')
-          .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
+        supabase
+          .from('location_prediction_results')
+          .select('id, prediction_run_id, location_id, overall_status, disaster_types, risk_score, run_timestamp')
           .eq('user_id', userId)
           .order('run_timestamp', { ascending: false })
-          .limit(MAX_PREDICTION_HISTORY_ROWS);
+          .limit(500),
+      ]);
 
-        if (scopedRunsRes.error) throw scopedRunsRes.error;
-        runHistory = (scopedRunsRes.data ?? []) as PredictionRunRow[];
-        setRunHistorySource('scoped');
-      } catch (runErr) {
-        const message = String((runErr as any)?.message ?? runErr ?? '').toLowerCase();
+      const locations = locationsRes.data ?? [];
+      const predResults = (predResultsRes.data ?? []) as LocationPredictionResult[];
 
-        // Backward compatibility for old schemas where prediction_runs.user_id
-        // does not exist yet. This avoids blank screens during migration.
-        if (message.includes('user_id') && message.includes('does not exist')) {
-          const globalRunsRes = await supabase
-            .from('prediction_runs')
-            .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
-            .order('run_timestamp', { ascending: false })
-            .limit(MAX_PREDICTION_HISTORY_ROWS);
-
-          runHistory = (globalRunsRes.data ?? []) as PredictionRunRow[];
-          setRunHistorySource('global-fallback');
-        } else {
-          console.error('[AlertsScreen] prediction_runs fetch error:', runErr);
-          setRunHistorySource('none');
-        }
-      }
-
-      setLatestRunDiagnostic(runHistory[0] ?? null);
-      const lastRun = runHistory.find((run) => run.status === 'completed') ?? null;
-
-      // Build location lookup map
-      const locMap: Record<string, { city: string; country: string }> = {};
+      // Location id → name map
+      const locMap: Record<string, string> = {};
       for (const loc of locations) {
-        locMap[loc.id] = { city: loc.city, country: loc.country };
+        locMap[loc.id] = `${loc.city}, ${loc.country}`;
       }
 
-      // Build set of location IDs that have disaster alerts
-      const alertedLocationIds = new Set(alerts.map((a) => a.location_id));
-
-      // Split into recent (<24h) and history (>=24h)
-      const now = Date.now();
-      const dayAgo = now - 24 * 60 * 60 * 1000;
-
+      // ── Recent tab: latest run results per location ─────────────────────────
+      // Find the most recent run_timestamp across all results
+      const latestTimestamp = predResults[0]?.run_timestamp ?? null;
       const recentAlerts: Alert[] = [];
-      for (const a of alerts) {
-        const sentAt = new Date(a.alert_sent_at).getTime();
-        const loc = locMap[a.location_id];
-        const locationStr = loc ? `${loc.city}, ${loc.country}` : 'Unknown location';
 
-        const alert: Alert = {
-          id: a.id,
-          severity: riskToSeverity(Number(a.risk_score)),
-          title: disasterTitle(a.disaster_type),
-          location: locationStr,
-          description: disasterDescription(a.disaster_type, Number(a.risk_score)),
-        };
+      if (latestTimestamp) {
+        // Collect all results from the latest run
+        const latestRunResults = predResults.filter(
+          (r) => r.run_timestamp === latestTimestamp
+        );
+        for (const r of latestRunResults) {
+          const locationName = locMap[r.location_id] ?? 'Unknown location';
+          const isDisaster = r.overall_status === 'Disaster' && r.disaster_types.length > 0;
+          const severity: Severity = isDisaster
+            ? (r.risk_score >= 0.8 ? 'danger' : 'watch')
+            : 'normal';
 
-        if (sentAt >= dayAgo) {
-          alert.relativeTime = relativeTimeStr(a.alert_sent_at);
-          recentAlerts.push(alert);
+          const title = isDisaster
+            ? r.disaster_types.map(disasterTitle).join(' + ')
+            : 'All Clear';
+
+          const description = isDisaster
+            ? r.disaster_types.map((t) => disasterDescription(t, r.risk_score)).join(' ')
+            : buildAllClearDescription(new Set());
+
+          recentAlerts.push({
+            id: `recent_${r.id}`,
+            severity,
+            title,
+            location: locationName,
+            description,
+            relativeTime: relativeTimeStr(r.run_timestamp),
+          });
         }
-      }
+        recentAlerts.sort((a, b) => SORDER[a.severity] - SORDER[b.severity]);
+      } else {
+        // Fallback: location_prediction_results is empty (table is new / first deploy).
+        // Use the last completed prediction_runs row to show All Clear for each location.
+        try {
+          const fallbackRunRes = await supabase
+            .from('prediction_runs')
+            .select('id, run_timestamp, status')
+            .eq('user_id', userId)
+            .eq('status', 'completed')
+            .order('run_timestamp', { ascending: false })
+            .limit(1)
+            .single();
 
-      // Build per-location, per-type alert set so we know which types are
-      // already covered by a real disaster_alert row.
-      const alertedByLocAndType: Map<string, Set<string>> = new Map();
-      for (const a of alerts) {
-        if (!alertedByLocAndType.has(a.location_id)) {
-          alertedByLocAndType.set(a.location_id, new Set());
-        }
-        alertedByLocAndType.get(a.location_id)!.add(a.disaster_type);
-      }
+          const fallbackRun = fallbackRunRes.data;
+          const checkTime = fallbackRun
+            ? relativeTimeStr(fallbackRun.run_timestamp)
+            : 'Checked today';
 
-      // For every saved location, show one card per disaster type.
-      // Types that already have a real alert are skipped here (shown above).
-      // Types that are clear get a Normal card so the user sees every assessment.
-      const checkTime = lastRun ? relativeTimeStr(lastRun.run_timestamp) : 'Checked today';
-      for (const loc of locations) {
-        const alertedTypes = alertedByLocAndType.get(loc.id) ?? new Set<string>();
-        const locationStr = `${loc.city}, ${loc.country}`;
-        for (const disasterType of DISASTER_TYPES) {
-          if (!alertedTypes.has(disasterType)) {
+          for (const loc of locations) {
             recentAlerts.push({
-              id: `normal_${loc.id}_${disasterType}`,
+              id: `fallback_${loc.id}`,
               severity: 'normal',
-              title: `${disasterTitle(disasterType)} — Clear`,
-              location: locationStr,
-              description: disasterClearDescription(disasterType),
+              title: 'All Clear',
+              location: `${loc.city}, ${loc.country}`,
+              description: buildAllClearDescription(new Set()),
               relativeTime: checkTime,
             });
           }
+        } catch {
+          // No run data available yet — leave recentAlerts empty.
         }
       }
 
-      // Group recent into sections (first few + "EARLIER TODAY")
       const recentSecs: AlertSection[] = [];
       if (recentAlerts.length > 0) {
-        // Sort: dangers first, then watch, advisory, normal last
-        recentAlerts.sort((a, b) => SORDER[a.severity] - SORDER[b.severity]);
         const top = recentAlerts.slice(0, 3);
         const earlier = recentAlerts.slice(3);
         recentSecs.push({ title: '', data: top });
-        if (earlier.length > 0) {
-          recentSecs.push({ title: 'EARLIER TODAY', data: earlier });
+        if (earlier.length > 0) recentSecs.push({ title: 'MORE', data: earlier });
+      }
+
+      // ── History tab: all runs grouped by run_timestamp ──────────────────────
+      // Group results by run_timestamp
+      const runGroups: Record<string, LocationPredictionResult[]> = {};
+      for (const r of predResults) {
+        if (!runGroups[r.run_timestamp]) runGroups[r.run_timestamp] = [];
+        runGroups[r.run_timestamp].push(r);
+      }
+
+      const historySecs: AlertSection[] = [];
+      for (const [ts, results] of Object.entries(runGroups)) {
+        const sectionLabel = sectionTitle(ts) || relativeTimeStr(ts);
+        const cards: Alert[] = results.map((r) => {
+          const locationName = locMap[r.location_id] ?? 'Unknown location';
+          const isDisaster = r.overall_status === 'Disaster' && r.disaster_types.length > 0;
+          const severity: Severity = isDisaster
+            ? (r.risk_score >= 0.8 ? 'danger' : 'watch')
+            : 'normal';
+          return {
+            id: `hist_${r.id}`,
+            severity,
+            title: isDisaster ? r.disaster_types.map(disasterTitle).join(' + ') : 'All Clear',
+            location: locationName,
+            description: isDisaster
+              ? r.disaster_types.map((t) => disasterDescription(t, r.risk_score)).join(' ')
+              : buildAllClearDescription(new Set()),
+            resolvedTime: resolvedTimeStr(ts),
+          };
+        });
+        cards.sort((a, b) => SORDER[a.severity] - SORDER[b.severity]);
+        historySecs.push({ title: sectionLabel, data: cards });
+      }
+
+      // Fallback: if location_prediction_results is empty (first deploy / old runs),
+      // try fetching prediction_runs summary for history
+      let latestRunDiag: PredictionRunRow | null = null;
+      if (historySecs.length === 0) {
+        try {
+          const runsRes = await supabase
+            .from('prediction_runs')
+            .select('id, run_timestamp, total_locations, predictions_made, alerts_created, errors_count, duration_seconds, status')
+            .eq('user_id', userId)
+            .order('run_timestamp', { ascending: false })
+            .limit(MAX_PREDICTION_HISTORY_ROWS);
+          const runs = (runsRes.data ?? []) as PredictionRunRow[];
+          latestRunDiag = runs[0] ?? null;
+          for (const run of runs) {
+            const severity: Severity = run.status === 'failed' ? 'danger'
+              : run.alerts_created > 0 ? 'watch'
+              : run.errors_count > 0 ? 'advisory'
+              : 'normal';
+            historySecs.push({
+              title: sectionTitle(run.run_timestamp) || relativeTimeStr(run.run_timestamp),
+              data: [{
+                id: `run_${run.id}`,
+                severity,
+                title: run.alerts_created > 0
+                  ? `${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'} generated`
+                  : 'Prediction cycle completed',
+                location: `${run.predictions_made}/${run.total_locations} locations analyzed`,
+                description: run.errors_count > 0
+                  ? `Cycle completed with ${run.errors_count} error(s) and ${run.alerts_created} alert(s).`
+                  : `Cycle completed successfully with ${run.alerts_created} alert(s).`,
+                resolvedTime: resolvedTimeStr(run.run_timestamp),
+                duration: run.duration_seconds != null ? `${run.duration_seconds}s` : undefined,
+              }],
+            });
+          }
+        } catch (runErr) {
+          console.error('[AlertsScreen] prediction_runs fallback error:', runErr);
         }
       }
 
-      // Group prediction run history by date
-      const historyGroups: Record<string, Alert[]> = {};
-      for (const run of runHistory) {
-        const severity: Severity =
-          run.status === 'failed'
-            ? 'danger'
-            : run.alerts_created > 0
-              ? 'watch'
-              : run.errors_count > 0
-                ? 'advisory'
-                : 'normal';
-
-        const historyItem: Alert = {
-          id: `run_${run.id}`,
-          severity,
-          title:
-            run.alerts_created > 0
-              ? `${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'} generated`
-              : 'Prediction cycle completed',
-          location: `${run.predictions_made}/${run.total_locations} locations analyzed`,
-          description:
-            run.errors_count > 0
-              ? `Cycle completed with ${run.errors_count} error${run.errors_count === 1 ? '' : 's'} and ${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'}.`
-              : `Cycle completed successfully with ${run.alerts_created} alert${run.alerts_created === 1 ? '' : 's'} generated.`,
-          resolvedTime: resolvedTimeStr(run.run_timestamp),
-          duration: run.duration_seconds != null ? `${run.duration_seconds}s` : undefined,
-        };
-
-        const key = sectionTitle(run.run_timestamp);
-        if (!historyGroups[key]) historyGroups[key] = [];
-        historyGroups[key].push(historyItem);
-      }
-      const historySecs: AlertSection[] = Object.entries(historyGroups).map(([title, data]) => ({ title, data }));
-
+      setLatestRunDiagnostic(latestRunDiag);
       setRecentSections(recentSecs);
       setHistorySections(historySecs);
     } catch (err) {
@@ -498,6 +515,7 @@ export default function AlertsScreen() {
       setLoading(false);
     }
   }, []);
+
 
   useEffect(() => {
     fetchAlerts();
